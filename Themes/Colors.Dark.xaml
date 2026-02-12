@@ -1,0 +1,75 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+  <!-- ═══════════════════════════════════════════════════════════ -->
+  <!-- OMEN MONOCHROME DARK - Minimalist Black & White            -->
+  <!-- ═══════════════════════════════════════════════════════════ -->
+
+  <!-- Background Colors (Pure Black / Near Black) -->
+  <Color x:Key="BgDeep">#FF000000</Color>      <!-- Main Window Background -->
+  <Color x:Key="BgPrimary">#FF000000</Color>   <!-- Content Background -->
+  <Color x:Key="BgCard">#FF0A0A0A</Color>      <!-- Cards (Subtle separation) -->
+  <Color x:Key="BgElevated">#FF141414</Color>  <!-- Dialogs/Popups -->
+  <Color x:Key="BgHover">#FF333333</Color>     <!-- Hover State -->
+  <Color x:Key="BgInput">#FF000000</Color>     <!-- Inputs -->
+
+  <!-- Accent Colors (White) -->
+  <Color x:Key="AccentOmen">#FFFFFFFF</Color>       <!-- Main Accent: White -->
+  <Color x:Key="AccentOmenLight">#FFE0E0E0</Color>  <!-- Slightly dimmer/greyer for contrast -->
+  <Color x:Key="AccentOmenDim">#FF808080</Color>    <!-- Disabled/Dim -->
+  
+  <!-- Functional Colors (Keep colored or make monochrome? User said "Black & White mode". 
+       Usually Functional colors (Success/Error) should remain for meaning, but let's desaturate them or keep them minimal.
+       Let's keep them distinctive but maybe muted, OR make them monochrome if "Minimalist" implies strict B&W.
+       Safety: Keep distinct colors for Red/Green but maybe high contrast. -->
+  <Color x:Key="AccentBlue">#FFFFFFFF</Color>   <!-- Treat as White -->
+  <Color x:Key="AccentGreen">#FF4ADE80</Color>  <!-- Green for status indicators -->
+  <Color x:Key="AccentRed">#FFEF4444</Color>    <!-- Red for warnings/performance -->
+  <Color x:Key="AccentYellow">#FFFBBF24</Color> <!-- Yellow/Amber for battery -->
+
+  <!-- Text Colors (White/Grey) -->
+  <Color x:Key="TextPrimary">#FFFFFFFF</Color>
+  <Color x:Key="TextSecondary">#FFCCCCCC</Color>
+  <Color x:Key="TextMuted">#FF888888</Color>
+  <Color x:Key="TextAccent">#FFFFFFFF</Color>
+
+  <!-- Border Colors (Grey for structure) -->
+  <Color x:Key="BorderDefault">#FF666666</Color>
+  <Color x:Key="BorderFocus">#FFFFFFFF</Color>
+
+  <!-- Brushes -->
+  <SolidColorBrush x:Key="BgDeepBrush" Color="{StaticResource BgDeep}" />
+  <SolidColorBrush x:Key="BgPrimaryBrush" Color="{StaticResource BgPrimary}" />
+  <SolidColorBrush x:Key="BgCardBrush" Color="{StaticResource BgCard}" />
+  <SolidColorBrush x:Key="BgElevatedBrush" Color="{StaticResource BgElevated}" />
+  <SolidColorBrush x:Key="BgHoverBrush" Color="{StaticResource BgHover}" />
+  <SolidColorBrush x:Key="BgInputBrush" Color="{StaticResource BgInput}" />
+
+  <SolidColorBrush x:Key="AccentOmenBrush" Color="{StaticResource AccentOmen}" />
+  <SolidColorBrush x:Key="AccentOmenLightBrush" Color="{StaticResource AccentOmenLight}" />
+  <SolidColorBrush x:Key="AccentOmenDimBrush" Color="{StaticResource AccentOmenDim}" />
+  <SolidColorBrush x:Key="AccentBlueBrush" Color="{StaticResource AccentBlue}" />
+  <SolidColorBrush x:Key="AccentGreenBrush" Color="{StaticResource AccentGreen}" />
+  <SolidColorBrush x:Key="AccentRedBrush" Color="{StaticResource AccentRed}" />
+  <SolidColorBrush x:Key="AccentYellowBrush" Color="{StaticResource AccentYellow}" />
+
+  <SolidColorBrush x:Key="TextPrimaryBrush" Color="{StaticResource TextPrimary}" />
+  <SolidColorBrush x:Key="TextSecondaryBrush" Color="{StaticResource TextSecondary}" />
+  <SolidColorBrush x:Key="TextMutedBrush" Color="{StaticResource TextMuted}" />
+  <SolidColorBrush x:Key="TextAccentBrush" Color="{StaticResource TextAccent}" />
+
+  <SolidColorBrush x:Key="BorderDefaultBrush" Color="{StaticResource BorderDefault}" />
+  <SolidColorBrush x:Key="BorderFocusBrush" Color="{StaticResource BorderFocus}" />
+
+  <!-- Gradient Brushes (Monochrome Gradient) -->
+  <LinearGradientBrush x:Key="AccentGradient" StartPoint="0,0" EndPoint="1,1">
+    <GradientStop Color="#FFFFFFFF" Offset="0"/>
+    <GradientStop Color="#FFCCCCCC" Offset="1"/>
+  </LinearGradientBrush>
+
+  <LinearGradientBrush x:Key="CardGradient" StartPoint="0,0" EndPoint="0,1">
+    <GradientStop Color="#FF101010" Offset="0"/>
+    <GradientStop Color="#FF000000" Offset="1"/>
+  </LinearGradientBrush>
+
+</ResourceDictionary>

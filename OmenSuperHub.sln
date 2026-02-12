@@ -1,0 +1,61 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.5.33530.505
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "OmenSuperHub", "OmenSuperHub.csproj", "{F5E0C1F7-9E9B-46F2-AC88-8C9C1C923880}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "LibreHMLib_PawnIo", "LibreHardwareMonitor-pawnio-squashed\LibreHardwareMonitorLib\LibreHMLib_PawnIo.csproj", "{3D996B14-D8D9-D7F6-B39B-46324DF820F1}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
+		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F5E0C1F7-9E9B-46F2-AC88-8C9C1C923880}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F5E0C1F7-9E9B-46F2-AC88-8C9C1C923880}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F5E0C1F7-9E9B-46F2-AC88-8C9C1C923880}.Debug|x64.ActiveCfg = Debug|x64
+		{F5E0C1F7-9E9B-46F2-AC88-8C9C1C923880}.Debug|x64.Build.0 = Debug|x64
+		{F5E0C1F7-9E9B-46F2-AC88-8C9C1C923880}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F5E0C1F7-9E9B-46F2-AC88-8C9C1C923880}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F5E0C1F7-9E9B-46F2-AC88-8C9C1C923880}.Release|x64.ActiveCfg = Release|x64
+		{F5E0C1F7-9E9B-46F2-AC88-8C9C1C923880}.Release|x64.Build.0 = Release|x64
+		{3D996B14-D8D9-D7F6-B39B-46324DF820F1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3D996B14-D8D9-D7F6-B39B-46324DF820F1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3D996B14-D8D9-D7F6-B39B-46324DF820F1}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{3D996B14-D8D9-D7F6-B39B-46324DF820F1}.Debug|x64.Build.0 = Debug|Any CPU
+		{3D996B14-D8D9-D7F6-B39B-46324DF820F1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3D996B14-D8D9-D7F6-B39B-46324DF820F1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3D996B14-D8D9-D7F6-B39B-46324DF820F1}.Release|x64.ActiveCfg = Release|Any CPU
+		{3D996B14-D8D9-D7F6-B39B-46324DF820F1}.Release|x64.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {0DCCC854-BBF2-40AC-81A2-10387E4E2868}
+	EndGlobalSection
+	GlobalSection(MonoDevelopProperties) = preSolution
+		StartupItem = OpenHardwareMonitor.csproj
+		Policies = $0
+		$0.DotNetNamingPolicy = $1
+		$1.DirectoryNamespaceAssociation = None
+		$1.ResourceNamePolicy = FileFormatDefault
+		$0.TextStylePolicy = $3
+		$2.FileWidth = 120
+		$2.TabWidth = 2
+		$2.NoTabsAfterNonTabs = True
+		$2.inheritsSet = VisualStudio
+		$2.inheritsScope = text/plain
+		$2.scope = text/plain
+		$3.inheritsSet = null
+		$3.scope = text/x-csharp
+		$0.CSharpFormattingPolicy = $4
+		$4.inheritsSet = Mono
+		$4.inheritsScope = text/x-csharp
+		$4.scope = text/x-csharp
+	EndGlobalSection
+EndGlobal
