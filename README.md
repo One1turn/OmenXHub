@@ -1,7 +1,5 @@
 # OMEN X Hub
 
-![Preview](Preview/HubGui.png)
-
 > A lightweight, offline replacement for HP OMEN Gaming Hub (OGH) — no advertisements, no wallpapers, no network connections.
 
 **OMEN X Hub** (formerly OmenSuperHub) is a WPF-based control center for HP OMEN / VICTUS gaming laptops. It provides comprehensive hardware monitoring, fan control, performance tuning, keyboard lighting, and system diagnostics — all without the bloat of the official OGH software.
