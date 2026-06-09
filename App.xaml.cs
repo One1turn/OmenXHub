@@ -6,6 +6,7 @@ using System.Windows;
 
 using OmenSuperHub.Services;
 using Microsoft.Win32;
+using static OmenSuperHub.OmenHardware;
 
 namespace OmenSuperHub {
   public partial class App : System.Windows.Application {
@@ -21,8 +22,7 @@ namespace OmenSuperHub {
       // Add dispatcher exception handler for XAML errors
       this.DispatcherUnhandledException += (s, args) => {
         System.Windows.MessageBox.Show(
-          "DispatcherException: " + args.Exception.Message + "\n\n" + args.Exception.StackTrace,
-          "OmenSuperHub Error", MessageBoxButton.OK, MessageBoxImage.Error);
+          "已经打开窗口", "OmenXHub", MessageBoxButton.OK, MessageBoxImage.Information);
         args.Handled = true;
       };
 
@@ -31,6 +31,7 @@ namespace OmenSuperHub {
         bool isNewInstance;
         _mutex = new Mutex(true, "MyUniqueAppMutex", out isNewInstance);
         if (!isNewInstance) {
+          System.Windows.MessageBox.Show("已经打开窗口", "OmenXHub", MessageBoxButton.OK, MessageBoxImage.Information);
           Shutdown();
           return;
         }
@@ -41,12 +42,41 @@ namespace OmenSuperHub {
 
         AppDomain.CurrentDomain.UnhandledException += CurrentDomain_UnhandledException;
 
+        // Initialize Logger
+        Logger.Info("OmenXHub starting...");
+
+        // Load language config
+        ConfigService.Load();
+        if (!string.IsNullOrEmpty(ConfigService.Language)) {
+          switch (ConfigService.Language) {
+            case "TraditionalChinese": Strings.Current = AppLanguage.TraditionalChinese; break;
+            case "English": Strings.Current = AppLanguage.English; break;
+            default: Strings.Current = AppLanguage.SimplifiedChinese; break;
+          }
+        }
+
+        // Preload NvidiaApi.dll for Hot Switch (DDS)
+        if (HardwareService.PowerOnline) {
+          try { OmenHardware.ExtractAndPreloadNativeDll("NvidiaApi.dll"); } catch { }
+        }
+
         // Initialize System Theme integration
         ThemeService.Initialize();
 
         // Initialize power status
         HardwareService.PowerOnline = System.Windows.Forms.SystemInformation.PowerStatus.PowerLineStatus == System.Windows.Forms.PowerLineStatus.Online;
         HardwareService.MonitorQuery();
+
+        // Initialize HP Performance Control SDK (required for CPU power WMI to work)
+        InitPerformanceControl();
+
+        // Set unleash mode — required before CPU power limit takes effect
+        try { SetFanMode((byte)0x31); } catch { }
+
+        // Show warning if SDK init failed
+        if (!OmenHardware.IsPowerControlSupported) {
+          Logger.Error("CPU power control may not work — HP SDK init failed!");
+        }
 
         // Version-based read code
         Version version = Assembly.GetExecutingAssembly().GetName().Version;
@@ -85,8 +115,8 @@ namespace OmenSuperHub {
     }
 
     protected override void OnExit(ExitEventArgs e) {
-      _mutex?.ReleaseMutex();
-      _mutex?.Dispose();
+      try { _mutex?.ReleaseMutex(); } catch { }
+      try { _mutex?.Dispose(); } catch { }
       base.OnExit(e);
     }
 

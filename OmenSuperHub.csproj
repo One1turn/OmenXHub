@@ -48,6 +48,7 @@
     <DefineConstants>TRACE;DEBUG</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <GenerateResourceUsePreserializedResources>true</GenerateResourceUsePreserializedResources>
     <UseVSHostingProcess>true</UseVSHostingProcess>
     <CodeAnalysisRuleSet>AllRules.ruleset</CodeAnalysisRuleSet>
     <PlatformTarget>AnyCPU</PlatformTarget>
@@ -106,6 +107,34 @@
     </Reference>
     <Reference Include="HidSharp, Version=2.1.0.0, Culture=neutral, processorArchitecture=MSIL">
       <HintPath>packages\HidSharp.2.1.0\lib\net35\HidSharp.dll</HintPath>
+    </Reference>
+    <Reference Include="Microsoft.Extensions.ObjectPool, Version=6.0.4.0, Culture=neutral, PublicKeyToken=adb9793829ddae60, processorArchitecture=MSIL">
+      <HintPath>packages\Microsoft.Extensions.ObjectPool.6.0.4\lib\net461\Microsoft.Extensions.ObjectPool.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
+    <Reference Include="HP.Omen.Core.Common">
+      <HintPath>Resources\HP.Omen.Core.Common.dll</HintPath>
+    </Reference>
+    <Reference Include="HP.Omen.Core.Model.Device">
+      <HintPath>Resources\HP.Omen.Core.Model.Device.dll</HintPath>
+    </Reference>
+    <Reference Include="McuSDK2">
+      <HintPath>Resources\McuSDK2.dll</HintPath>
+    </Reference>
+    <Reference Include="PerformanceControl">
+      <HintPath>Resources\PerformanceControl.dll</HintPath>
+    </Reference>
+    <Reference Include="AMDRyzenSDK">
+      <HintPath>Resources\AMDRyzenSDK.dll</HintPath>
+    </Reference>
+    <Reference Include="IntelXTUSDK">
+      <HintPath>Resources\IntelXTUSDK.dll</HintPath>
+    </Reference>
+    <Reference Include="SMBiosSDK">
+      <HintPath>Resources\SMBiosSDK.dll</HintPath>
+    </Reference>
+    <Reference Include="Utf8Json">
+      <HintPath>Resources\Utf8Json.dll</HintPath>
     </Reference>
     <Reference Include="Microsoft.CSharp" />
     <Reference Include="Microsoft.Win32.Primitives, Version=4.0.2.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
@@ -234,6 +263,10 @@
     </Reference>
     <Reference Include="System.Windows.Forms" />
     <Reference Include="System.Windows.Forms.DataVisualization" />
+    <Reference Include="System.Resources.Extensions, Version=8.0.0.0, Culture=neutral, PublicKeyToken=cc7b13ffcd2ddd51, processorArchitecture=MSIL">
+      <HintPath>packages\System.Resources.Extensions.8.0.0\lib\net462\System.Resources.Extensions.dll</HintPath>
+      <Private>True</Private>
+    </Reference>
     <Reference Include="System.Xaml" />
     <Reference Include="System.Xml" />
     <Reference Include="System.Xml.Linq" />
@@ -267,6 +300,11 @@
       <SubType>Designer</SubType>
       <Generator>MSBuild:Compile</Generator>
     </Page>
+    <!-- App -->
+    <Compile Include="App\Logger.cs" />
+    <Compile Include="App\Strings.cs" />
+    <Compile Include="App\GpuAppManager.cs" />
+    <Compile Include="App\OmenLighting.cs" />
     <!-- Services -->
     <Compile Include="Services\ConfigService.cs" />
     <Compile Include="Services\FanService.cs" />
@@ -353,6 +391,21 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Resources\nvpcf_inf.inf" />
+    <EmbeddedResource Include="Resources\NvidiaApi.dll" />
+    <EmbeddedResource Include="Resources\McuSDK2.dll" />
+    <EmbeddedResource Include="Resources\HP.Omen.Core.Common.dll" />
+    <EmbeddedResource Include="Resources\HP.Omen.Core.Model.Device.dll" />
+    <EmbeddedResource Include="Resources\HP.Omen.Core.Api.dll" />
+    <EmbeddedResource Include="Resources\HP.Omen.Core.Model.DataStructure.dll" />
+    <EmbeddedResource Include="Resources\HP.Omen.Core.Utilities.dll" />
+    <EmbeddedResource Include="Resources\HP.Omen.Core.Logger.dll" />
+    <EmbeddedResource Include="Resources\HP.Omen.Logger.dll" />
+    <EmbeddedResource Include="Resources\HP.Omen.Logger.APIs.dll" />
+    <EmbeddedResource Include="Resources\PerformanceControl.dll" />
+    <EmbeddedResource Include="Resources\AMDRyzenSDK.dll" />
+    <EmbeddedResource Include="Resources\IntelXTUSDK.dll" />
+    <EmbeddedResource Include="Resources\SMBiosSDK.dll" />
+    <EmbeddedResource Include="Resources\Utf8Json.dll" />
   </ItemGroup>
   <Import Project="$(MSBuildBinPath)\Microsoft.CSharp.targets" />
   <ProjectExtensions>
