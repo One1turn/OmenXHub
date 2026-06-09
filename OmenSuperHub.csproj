@@ -8,6 +8,7 @@
     <ProductVersion>9.0.30729</ProductVersion>
     <SchemaVersion>2.0</SchemaVersion>
     <OutputType>WinExe</OutputType>
+    <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
     <NoStandardLibraries>false</NoStandardLibraries>
     <AssemblyName>OmenXHub</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
@@ -15,7 +16,6 @@
     <RootNamespace>OmenSuperHub</RootNamespace>
     <ApplicationIcon>Resources\fan.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
-
     <FileUpgradeFlags>
     </FileUpgradeFlags>
     <OldToolsVersion>3.5</OldToolsVersion>
@@ -24,7 +24,7 @@
     <TargetFrameworkProfile />
     <NuGetPackageImportStamp>
     </NuGetPackageImportStamp>
-    <PublishUrl>publish\</PublishUrl>
+    <PublishUrl>C:\Users\PC\Desktop\</PublishUrl>
     <Install>true</Install>
     <InstallFrom>Disk</InstallFrom>
     <UpdateEnabled>false</UpdateEnabled>
@@ -38,7 +38,7 @@
     <ApplicationVersion>0.9.7.%2a</ApplicationVersion>
     <UseApplicationTrust>false</UseApplicationTrust>
     <PublishWizardCompleted>true</PublishWizardCompleted>
-    <BootstrapperEnabled>true</BootstrapperEnabled>
+    <BootstrapperEnabled>false</BootstrapperEnabled>
   </PropertyGroup>
   <PropertyGroup Condition=" '$(Configuration)|$(Platform)' == 'Debug|AnyCPU' ">
     <DebugSymbols>true</DebugSymbols>
@@ -337,7 +337,6 @@
     <Compile Include="OmenHardware.cs" />
     <Compile Include="Properties\AssemblyVersion.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
-
     <Compile Include="Properties\Resources.Designer.cs">
       <AutoGen>True</AutoGen>
       <DesignTime>True</DesignTime>
