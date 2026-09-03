@@ -158,7 +158,7 @@ namespace OmenSuperHub.Services {
       var langMenu = CreateParentMenuItem(Strings.LanguageMenu);
       System.Action applyAll = () => {
         RebuildMenu();
-        Views.MainWindow.ApplyLanguageToInstance();
+        // ponytail: 主窗口不实时切换 — 页面文本在重开主面板(ReleaseFrontend 清页面缓存)后生效
       };
       langMenu.Items.Add(CreateMenuItem(Strings.LangSimplified, "languageGroup", () => {
         Strings.SetLanguage(AppLanguage.SimplifiedChinese);
@@ -379,7 +379,9 @@ namespace OmenSuperHub.Services {
           _dataLocalizeDir = System.IO.Path.GetDirectoryName(System.Windows.Forms.Application.ExecutablePath);
         System.IO.File.WriteAllText(System.IO.Path.Combine(_dataLocalizeDir, "cpu_temp.txt"), $"{(int)HardwareService.CPUTemp}°C");
         System.IO.File.WriteAllText(System.IO.Path.Combine(_dataLocalizeDir, "gpu_temp.txt"), $"{(int)HardwareService.GPUTemp}°C");
-      } catch { }
+      } catch (Exception ex) {
+        Logger.Warn($"[TrayService] WriteDataLocalize: {ex.Message}");  // Logger 30s 节流,1s 周期调用不刷屏
+      }
     }
 
     // Auto fan protect: if CPU >95°C and fans are fixed <75%, switch to auto+cool
