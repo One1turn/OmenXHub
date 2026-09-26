@@ -30,6 +30,11 @@ namespace OmenSuperHub.Utils {
     const int HoverDelayMs = 120;
     // How long the cursor must stay gone before we raise MouseLeave
     const int LeaveDelayMs = 80;
+    // ponytail: issue #33 —— 进入 hover 还必须有"新鲜"的 Shell WM_MOUSEMOVE 送达。
+    // 旧逻辑只看光标是否停在"上次真实 hover 记下的坐标"附近,任务栏自动隐藏/图标移位后
+    // 这些坐标成了幽灵位置 —— 鼠标经过空槽位没有任何 Shell 回调也照样弹浮窗(图一/图三)。
+    // 要求进入前 EnterFreshMs 内有真实回调,静止悬停不受影响(进入前光标必在移动,回调已到达)。
+    const int EnterFreshMs = 400;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     struct NOTIFYICONDATAW {
@@ -250,8 +255,11 @@ namespace OmenSuperHub.Utils {
       if (nearIcon) {
         _leaveTick = 0;
         if (!_isHovering) {
+          // ponytail: 进入必须有 Shell 新鲜回调背书(见 EnterFreshMs)。leave/保持路径
+          // 不加此约束 —— 静止悬停时本就只有进入前的移动才产生回调。
+          bool shellConfirmed = Environment.TickCount - _lastMoveTick <= EnterFreshMs;
           _hoverSeenMoves++;
-          if (_hoverSeenMoves >= 2) {   // ~80ms of presence before opening
+          if (_hoverSeenMoves >= 2 && shellConfirmed) {   // ~80ms of presence before opening
             _isHovering = true;
             MouseEnter?.Invoke();
           }

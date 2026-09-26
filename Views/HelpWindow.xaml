@@ -151,11 +151,11 @@
 
             <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" Margin="0,0,0,24">
               <Hyperlink NavigateUri="https://github.com/sponsors/MasonDye" RequestNavigate="Hyperlink_RequestNavigate" FontSize="{DynamicResource FontSizeSubtitle}">
-                <Run FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" Text="{x:Static app:Strings.HelpDonateGitHubSponsors}"/>
+                <Run FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" Text="{x:Static app:Strings.HelpDonateOriginalAuthor}"/>
               </Hyperlink>
               <LineBreak/>
               <Hyperlink NavigateUri="https://github.com/One1turn" RequestNavigate="Hyperlink_RequestNavigate" FontSize="{DynamicResource FontSizeSubtitle}">
-                <Run FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" Text="One1turn"/>
+                <Run FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" Text="{x:Static app:Strings.HelpDonateMaintainer}"/>
               </Hyperlink>
             </TextBlock>
 

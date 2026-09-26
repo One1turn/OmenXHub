@@ -77,7 +77,9 @@ Smart charging, Num Lock, Caps Lock, touchpad lock, HWiNFO64 integration, HTTP A
 
 ### Settings
 
-Overlay display (position / layout / font / opacity / multi-monitor), Omen Key, OSD toast, tray icon (default / custom / dynamic), auto-start, custom main logo, theme (dark / light), language, custom background (opacity / Gaussian blur), data localization, debug log.
+Overlay display (position / layout / font / opacity / multi-monitor), Omen Key, OSD toast, tray icon (default / custom / dynamic), auto-start, custom main logo, theme (dark / light), language, custom background (opacity / Gaussian blur), data localization, debug log, OMEN Light Studio stub.
+
+> **OMEN Light Studio stub**: when OGH is uninstalled, a same-named placeholder stub package can be registered from the Settings page so the official OMEN Light Studio passes its install check. Registering the stub requires Windows **Developer Mode** (Windows Settings → Privacy & security → For developers → Developer Mode); the app will prompt and try to enable it for you.
 
 ![Settings](Preview/Settings.png)
 
@@ -106,6 +108,7 @@ Only CPU power, power plan, GPU frequency limit, TGP+PPAB, and dState are bound 
 - HP OMEN / VICTUS gaming laptop with WMI BIOS interface
 - Windows 10/11 64-bit · .NET Framework 4.8
 - Administrative privileges (required for WMI, fan control, driver installation)
+- Registering the OMEN Light Studio stub requires Windows Developer Mode (Settings → Privacy & security → For developers; the app guides you through enabling it — only that feature needs it)
 
 ## Getting Started
 
