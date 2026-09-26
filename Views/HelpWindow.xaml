@@ -3,9 +3,10 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:app="clr-namespace:OmenSuperHub"
-	        Title="{x:Static app:Strings.HelpWindowTitleBar}" Width="700" Height="620"
+	        Title="{x:Static app:Strings.HelpWindowTitleBar}" Width="800" Height="640"
+        MinWidth="680" MinHeight="480"
         WindowStartupLocation="CenterScreen" Topmost="True"
-        ResizeMode="CanMinimize" ShowInTaskbar="True"
+        ResizeMode="CanResize" ShowInTaskbar="True"
         WindowBackdropType="Mica"
         ExtendsContentIntoTitleBar="True"
         Background="Transparent">
@@ -17,6 +18,7 @@
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
+    <!-- ── 顶栏：标题 / 版本 / 动作 ── -->
     <Border Grid.Row="0" Background="{DynamicResource BgDeepBrush}" Padding="24,20"
             BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,0,0,1">
       <Grid>
@@ -39,135 +41,270 @@
     </Border>
 
     <TabControl Grid.Row="1">
-      <TabItem  Header="{x:Static app:Strings.HelpTabUpdates}">
-        <ScrollViewer >
-          <TextBlock x:Name="UpdateNotesText" FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap" LineHeight="24" Margin="24,16"/>
-        </ScrollViewer>
-      </TabItem>
-      <TabItem  Header="{x:Static app:Strings.HelpTabFanConfig}">
-        <ScrollViewer >
-          <StackPanel Margin="24,16">
-            <TextBlock FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" Text="{x:Static app:Strings.HelpFanConfigSub}" Margin="0,0,0,12"/>
-            <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" x:Name="FanConfigHelp"/>
-          </StackPanel>
-        </ScrollViewer>
-      </TabItem>
-      <TabItem  Header="{x:Static app:Strings.HelpTabFanControl}">
-        <ScrollViewer >
-          <StackPanel Margin="24,16">
-            <TextBlock FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" Text="{x:Static app:Strings.HelpFanControlSub}" Margin="0,0,0,12"/>
-            <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" x:Name="FanControlHelp"/>
-          </StackPanel>
-        </ScrollViewer>
-      </TabItem>
-      <TabItem  Header="{x:Static app:Strings.HelpTabPerformance}">
-        <ScrollViewer >
-          <StackPanel Margin="24,16">
-            <TextBlock FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" Text="{x:Static app:Strings.HelpPerformanceSub}" Margin="0,0,0,12"/>
-            <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" x:Name="PerformanceHelp"/>
-          </StackPanel>
-        </ScrollViewer>
-      </TabItem>
-      <TabItem  Header="{x:Static app:Strings.HelpTabOther}">
-        <ScrollViewer >
-          <StackPanel Margin="24,16">
-            <TextBlock FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" Text="{x:Static app:Strings.HelpOtherSub}" Margin="0,0,0,12"/>
-            <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" x:Name="OtherHelp"/>
-          </StackPanel>
-        </ScrollViewer>
-      </TabItem>
-      <TabItem  Header="{x:Static app:Strings.HelpTabCredits}">
-        <ScrollViewer >
-          <StackPanel Margin="24,16">
-            <TextBlock FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" Text="{x:Static app:Strings.HelpCreditsSub}" Margin="0,0,0,12"/>
-            <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" Margin="0,0,0,16">
-              <Run Text="MasonDye" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}"/>
-              <LineBreak/>
-	              <Run Text="{x:Static app:Strings.HelpCreditsGuiDesign}"/>
-              <LineBreak/>
-              <Hyperlink NavigateUri="https://github.com/MasonDye" RequestNavigate="Hyperlink_RequestNavigate">https://github.com/MasonDye</Hyperlink>
-            </TextBlock>
-            <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" Margin="0,0,0,16">
-              <Run Text="breadeding" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}"/>
-              <LineBreak/>
-	              <Run Text="{x:Static app:Strings.HelpCreditsSuperHub}"/>
-              <LineBreak/>
-              <Hyperlink NavigateUri="https://github.com/breadeding" RequestNavigate="Hyperlink_RequestNavigate">https://github.com/breadeding</Hyperlink>
-              <LineBreak/>
-              <Hyperlink NavigateUri="https://github.com/breadeding/OmenSuperHub" RequestNavigate="Hyperlink_RequestNavigate">https://github.com/breadeding/OmenSuperHub</Hyperlink>
-            </TextBlock>
-            <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" Margin="0,0,0,16">
-              <Run Text="GeographicCone" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}"/>
-              <LineBreak/>
-	              <Run Text="{x:Static app:Strings.HelpCreditsOmenMon}"/>
-              <LineBreak/>
-              <Hyperlink NavigateUri="https://github.com/GeographicCone" RequestNavigate="Hyperlink_RequestNavigate">https://github.com/GeographicCone</Hyperlink>
-            </TextBlock>
-            <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" Margin="0,0,0,16">
-              <Run Text="OpenHardwareMonitor / hexagon-oss / LibreHardwareMonitor" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}"/>
-              <LineBreak/>
-	              <Run Text="{x:Static app:Strings.HelpCreditsLhm}"/>
-              <LineBreak/>
-              <Hyperlink NavigateUri="https://openhardwaremonitor.org/" RequestNavigate="Hyperlink_RequestNavigate">https://openhardwaremonitor.org/</Hyperlink>
-              <LineBreak/>
-              <Hyperlink NavigateUri="https://github.com/hexagon-oss/openhardwaremonitor" RequestNavigate="Hyperlink_RequestNavigate">https://github.com/hexagon-oss/openhardwaremonitor</Hyperlink>
-              <LineBreak/>
-              <Hyperlink NavigateUri="https://github.com/LibreHardwareMonitor/LibreHardwareMonitor" RequestNavigate="Hyperlink_RequestNavigate">https://github.com/LibreHardwareMonitor/LibreHardwareMonitor</Hyperlink>
-            </TextBlock>
-            <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" Margin="0,0,0,16">
-              <Run Text="lepoco/wpfui" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}"/>
-              <LineBreak/>
-	              <Run Text="{x:Static app:Strings.HelpCreditsWpfUi}"/>
-              <LineBreak/>
-              <Hyperlink NavigateUri="https://github.com/lepoco/wpfui" RequestNavigate="Hyperlink_RequestNavigate">https://github.com/lepoco/wpfui</Hyperlink>
-            </TextBlock>
-            <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" Margin="0,0,0,16">
-              <Run Text="BartoszCichecki/LenovoLegionToolkit" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}"/>
-              <LineBreak/>
-	              <Run Text="{x:Static app:Strings.HelpCreditsLlt}"/>
-              <LineBreak/>
-              <Hyperlink NavigateUri="https://github.com/BartoszCichecki/LenovoLegionToolkit" RequestNavigate="Hyperlink_RequestNavigate">https://github.com/BartoszCichecki/LenovoLegionToolkit</Hyperlink>
-            </TextBlock>
-            <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" Margin="0,0,0,16">
-              <Run Text="henrypp/memreduct" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}"/>
-              <LineBreak/>
-	              <Run Text="{x:Static app:Strings.HelpCreditsMemReduct}"/>
-              <LineBreak/>
-              <Hyperlink NavigateUri="https://github.com/henrypp/memreduct/releases" RequestNavigate="Hyperlink_RequestNavigate">https://github.com/henrypp/memreduct/releases</Hyperlink>
-            </TextBlock>
-            <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" Margin="0,0,0,16">
-              <Run Text="Hypostasis-Cat/HypoMux" FontWeight="Bold" Foreground="{DynamicResource TextPrimaryBrush}"/>
-              <LineBreak/>
-	              <Run Text="{x:Static app:Strings.HelpCreditsHypoMux}"/>
-            </TextBlock>
-          </StackPanel>
-        </ScrollViewer>
-      </TabItem>
-      <TabItem  Header="{x:Static app:Strings.HelpTabDonate}">
-        <ScrollViewer >
-          <StackPanel Margin="24,16">
-            <TextBlock FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" Text="{x:Static app:Strings.HelpDonateSub}" Margin="0,0,0,12"/>
-            <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" Text="{x:Static app:Strings.HelpDonateIntro}" TextWrapping="Wrap" Margin="0,0,0,20"/>
 
-            <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" Margin="0,0,0,24">
-              <Hyperlink NavigateUri="https://github.com/sponsors/MasonDye" RequestNavigate="Hyperlink_RequestNavigate" FontSize="{DynamicResource FontSizeSubtitle}">
-                <Run FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" Text="{x:Static app:Strings.HelpDonateOriginalAuthor}"/>
-              </Hyperlink>
-              <LineBreak/>
-              <Hyperlink NavigateUri="https://github.com/One1turn" RequestNavigate="Hyperlink_RequestNavigate" FontSize="{DynamicResource FontSizeSubtitle}">
-                <Run FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" Text="{x:Static app:Strings.HelpDonateMaintainer}"/>
-              </Hyperlink>
-            </TextBlock>
+      <!-- ── 更新说明 ── -->
+      <TabItem>
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="Info24" FontSize="18" Margin="0,0,6,0"/>
+            <TextBlock Text="{x:Static app:Strings.HelpTabUpdates}" VerticalAlignment="Center"/>
+          </StackPanel>
+        </TabItem.Header>
+        <ScrollViewer Padding="24,20">
+          <Grid MaxWidth="720" HorizontalAlignment="Center">
+            <TextBlock x:Name="UpdateNotesText" FontSize="{DynamicResource FontSizeSubtitle}"
+                       TextWrapping="Wrap" LineHeight="22"/>
+          </Grid>
+        </ScrollViewer>
+      </TabItem>
 
-            <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Text="{x:Static app:Strings.HelpDonateStarHint}"/>
+      <!-- ── 风扇配置 ── -->
+      <TabItem>
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="WeatherSqualls24" FontSize="18" Margin="0,0,6,0"/>
+            <TextBlock Text="{x:Static app:Strings.HelpTabFanConfig}" VerticalAlignment="Center"/>
+          </StackPanel>
+        </TabItem.Header>
+        <ScrollViewer Padding="24,20">
+          <Grid MaxWidth="720" HorizontalAlignment="Center">
+            <TextBlock x:Name="FanConfigHelp" FontSize="{DynamicResource FontSizeSubtitle}"
+                       TextWrapping="Wrap" LineHeight="22"/>
+          </Grid>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ── 风扇控制 ── -->
+      <TabItem>
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="Pulse24" FontSize="18" Margin="0,0,6,0"/>
+            <TextBlock Text="{x:Static app:Strings.HelpTabFanControl}" VerticalAlignment="Center"/>
+          </StackPanel>
+        </TabItem.Header>
+        <ScrollViewer Padding="24,20">
+          <Grid MaxWidth="720" HorizontalAlignment="Center">
+            <TextBlock x:Name="FanControlHelp" FontSize="{DynamicResource FontSizeSubtitle}"
+                       TextWrapping="Wrap" LineHeight="22"/>
+          </Grid>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ── 性能控制 ── -->
+      <TabItem>
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="Gauge24" FontSize="18" Margin="0,0,6,0"/>
+            <TextBlock Text="{x:Static app:Strings.HelpTabPerformance}" VerticalAlignment="Center"/>
+          </StackPanel>
+        </TabItem.Header>
+        <ScrollViewer Padding="24,20">
+          <Grid MaxWidth="720" HorizontalAlignment="Center">
+            <TextBlock x:Name="PerformanceHelp" FontSize="{DynamicResource FontSizeSubtitle}"
+                       TextWrapping="Wrap" LineHeight="22"/>
+          </Grid>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ── 其他 ── -->
+      <TabItem>
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="Apps24" FontSize="18" Margin="0,0,6,0"/>
+            <TextBlock Text="{x:Static app:Strings.HelpTabOther}" VerticalAlignment="Center"/>
+          </StackPanel>
+        </TabItem.Header>
+        <ScrollViewer Padding="24,20">
+          <Grid MaxWidth="720" HorizontalAlignment="Center">
+            <TextBlock x:Name="OtherHelp" FontSize="{DynamicResource FontSizeSubtitle}"
+                       TextWrapping="Wrap" LineHeight="22"/>
+          </Grid>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ── 致谢 ── -->
+      <TabItem>
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="Heart24" FontSize="18" Margin="0,0,6,0"/>
+            <TextBlock Text="{x:Static app:Strings.HelpTabCredits}" VerticalAlignment="Center"/>
+          </StackPanel>
+        </TabItem.Header>
+        <ScrollViewer Padding="24,20">
+          <StackPanel MaxWidth="720" HorizontalAlignment="Center">
+            <TextBlock FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold"
+                       Foreground="{DynamicResource AccentOmenBrush}"
+                       Text="{x:Static app:Strings.HelpCreditsSub}" Margin="0,0,0,14"/>
+
+            <!-- 每位贡献者一张卡：名字+贡献 同行, 链接下一行 -->
+            <Border CornerRadius="8" Padding="16,12" Background="{DynamicResource ControlFillColorDefaultBrush}" Margin="0,0,0,10">
+              <StackPanel>
+                <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap">
+                  <Run Text="MasonDye" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                  <Run Text="  —  " Foreground="{DynamicResource TextSecondaryBrush}"/>
+                  <Run Text="{x:Static app:Strings.HelpCreditsGuiDesign}" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                </TextBlock>
+                <TextBlock FontSize="{DynamicResource FontSizeCaption}" Margin="14,4,0,0">
+                  <Hyperlink NavigateUri="https://github.com/MasonDye" RequestNavigate="Hyperlink_RequestNavigate">github.com/MasonDye</Hyperlink>
+                </TextBlock>
+              </StackPanel>
+            </Border>
+
+            <Border CornerRadius="8" Padding="16,12" Background="{DynamicResource ControlFillColorDefaultBrush}" Margin="0,0,0,10">
+              <StackPanel>
+                <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap">
+                  <Run Text="breadeding" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                  <Run Text="  —  " Foreground="{DynamicResource TextSecondaryBrush}"/>
+                  <Run Text="{x:Static app:Strings.HelpCreditsSuperHub}" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                </TextBlock>
+                <TextBlock FontSize="{DynamicResource FontSizeCaption}" Margin="14,4,0,0">
+                  <Hyperlink NavigateUri="https://github.com/breadeding" RequestNavigate="Hyperlink_RequestNavigate">github.com/breadeding</Hyperlink>
+                  <Run Text="  ·  "/>
+                  <Hyperlink NavigateUri="https://github.com/breadeding/OmenSuperHub" RequestNavigate="Hyperlink_RequestNavigate">github.com/breadeding/OmenSuperHub</Hyperlink>
+                </TextBlock>
+              </StackPanel>
+            </Border>
+
+            <Border CornerRadius="8" Padding="16,12" Background="{DynamicResource ControlFillColorDefaultBrush}" Margin="0,0,0,10">
+              <StackPanel>
+                <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap">
+                  <Run Text="GeographicCone" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                  <Run Text="  —  " Foreground="{DynamicResource TextSecondaryBrush}"/>
+                  <Run Text="{x:Static app:Strings.HelpCreditsOmenMon}" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                </TextBlock>
+                <TextBlock FontSize="{DynamicResource FontSizeCaption}" Margin="14,4,0,0">
+                  <Hyperlink NavigateUri="https://github.com/GeographicCone" RequestNavigate="Hyperlink_RequestNavigate">github.com/GeographicCone</Hyperlink>
+                </TextBlock>
+              </StackPanel>
+            </Border>
+
+            <Border CornerRadius="8" Padding="16,12" Background="{DynamicResource ControlFillColorDefaultBrush}" Margin="0,0,0,10">
+              <StackPanel>
+                <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap">
+                  <Run Text="OpenHardwareMonitor / hexagon-oss / LibreHardwareMonitor" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                  <Run Text="  —  " Foreground="{DynamicResource TextSecondaryBrush}"/>
+                  <Run Text="{x:Static app:Strings.HelpCreditsLhm}" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                </TextBlock>
+                <TextBlock FontSize="{DynamicResource FontSizeCaption}" Margin="14,4,0,0" TextWrapping="Wrap">
+                  <Hyperlink NavigateUri="https://openhardwaremonitor.org/" RequestNavigate="Hyperlink_RequestNavigate">openhardwaremonitor.org</Hyperlink>
+                  <Run Text="  ·  "/>
+                  <Hyperlink NavigateUri="https://github.com/hexagon-oss/openhardwaremonitor" RequestNavigate="Hyperlink_RequestNavigate">github.com/hexagon-oss/openhardwaremonitor</Hyperlink>
+                  <Run Text="  ·  "/>
+                  <Hyperlink NavigateUri="https://github.com/LibreHardwareMonitor/LibreHardwareMonitor" RequestNavigate="Hyperlink_RequestNavigate">github.com/LibreHardwareMonitor/LibreHardwareMonitor</Hyperlink>
+                </TextBlock>
+              </StackPanel>
+            </Border>
+
+            <Border CornerRadius="8" Padding="16,12" Background="{DynamicResource ControlFillColorDefaultBrush}" Margin="0,0,0,10">
+              <StackPanel>
+                <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap">
+                  <Run Text="lepoco/wpfui" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                  <Run Text="  —  " Foreground="{DynamicResource TextSecondaryBrush}"/>
+                  <Run Text="{x:Static app:Strings.HelpCreditsWpfUi}" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                </TextBlock>
+                <TextBlock FontSize="{DynamicResource FontSizeCaption}" Margin="14,4,0,0">
+                  <Hyperlink NavigateUri="https://github.com/lepoco/wpfui" RequestNavigate="Hyperlink_RequestNavigate">github.com/lepoco/wpfui</Hyperlink>
+                </TextBlock>
+              </StackPanel>
+            </Border>
+
+            <Border CornerRadius="8" Padding="16,12" Background="{DynamicResource ControlFillColorDefaultBrush}" Margin="0,0,0,10">
+              <StackPanel>
+                <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap">
+                  <Run Text="BartoszCichecki/LenovoLegionToolkit" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                  <Run Text="  —  " Foreground="{DynamicResource TextSecondaryBrush}"/>
+                  <Run Text="{x:Static app:Strings.HelpCreditsLlt}" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                </TextBlock>
+                <TextBlock FontSize="{DynamicResource FontSizeCaption}" Margin="14,4,0,0">
+                  <Hyperlink NavigateUri="https://github.com/BartoszCichecki/LenovoLegionToolkit" RequestNavigate="Hyperlink_RequestNavigate">github.com/BartoszCichecki/LenovoLegionToolkit</Hyperlink>
+                </TextBlock>
+              </StackPanel>
+            </Border>
+
+            <Border CornerRadius="8" Padding="16,12" Background="{DynamicResource ControlFillColorDefaultBrush}" Margin="0,0,0,10">
+              <StackPanel>
+                <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap">
+                  <Run Text="henrypp/memreduct" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                  <Run Text="  —  " Foreground="{DynamicResource TextSecondaryBrush}"/>
+                  <Run Text="{x:Static app:Strings.HelpCreditsMemReduct}" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                </TextBlock>
+                <TextBlock FontSize="{DynamicResource FontSizeCaption}" Margin="14,4,0,0">
+                  <Hyperlink NavigateUri="https://github.com/henrypp/memreduct/releases" RequestNavigate="Hyperlink_RequestNavigate">github.com/henrypp/memreduct/releases</Hyperlink>
+                </TextBlock>
+              </StackPanel>
+            </Border>
+
+            <Border CornerRadius="8" Padding="16,12" Background="{DynamicResource ControlFillColorDefaultBrush}">
+              <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap">
+                <Run Text="Hypostasis-Cat/HypoMux" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
+                <Run Text="  —  " Foreground="{DynamicResource TextSecondaryBrush}"/>
+                <Run Text="{x:Static app:Strings.HelpCreditsHypoMux}" Foreground="{DynamicResource TextSecondaryBrush}"/>
+              </TextBlock>
+            </Border>
+          </StackPanel>
+        </ScrollViewer>
+      </TabItem>
+
+      <!-- ── 捐赠 ── -->
+      <TabItem>
+        <TabItem.Header>
+          <StackPanel Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="Wallet24" FontSize="18" Margin="0,0,6,0"/>
+            <TextBlock Text="{x:Static app:Strings.HelpTabDonate}" VerticalAlignment="Center"/>
+          </StackPanel>
+        </TabItem.Header>
+        <ScrollViewer Padding="24,20">
+          <StackPanel MaxWidth="720" HorizontalAlignment="Center">
+            <TextBlock FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold"
+                       Foreground="{DynamicResource AccentOmenBrush}"
+                       Text="{x:Static app:Strings.HelpDonateSub}" Margin="0,0,0,12"/>
+            <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap" LineHeight="22"
+                       Text="{x:Static app:Strings.HelpDonateIntro}" Margin="0,0,0,18"/>
+
+            <Border CornerRadius="8" Padding="16,14" Background="{DynamicResource ControlFillColorDefaultBrush}" Margin="0,0,0,10">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <ui:SymbolIcon Grid.Column="0" Symbol="Heart24" FontSize="22" VerticalAlignment="Center"
+                               Foreground="{DynamicResource AccentOmenBrush}" Margin="0,0,12,0"/>
+                <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap">
+                  <Hyperlink NavigateUri="https://github.com/sponsors/MasonDye" RequestNavigate="Hyperlink_RequestNavigate">
+                    <Run Text="{x:Static app:Strings.HelpDonateOriginalAuthor}"/>
+                  </Hyperlink>
+                </TextBlock>
+              </Grid>
+            </Border>
+
+            <Border CornerRadius="8" Padding="16,14" Background="{DynamicResource ControlFillColorDefaultBrush}">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <ui:SymbolIcon Grid.Column="0" Symbol="Code24" FontSize="22" VerticalAlignment="Center"
+                               Foreground="{DynamicResource AccentOmenBrush}" Margin="0,0,12,0"/>
+                <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap">
+                  <Hyperlink NavigateUri="https://github.com/One1turn" RequestNavigate="Hyperlink_RequestNavigate">
+                    <Run Text="{x:Static app:Strings.HelpDonateMaintainer}"/>
+                  </Hyperlink>
+                </TextBlock>
+              </Grid>
+            </Border>
+
+            <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"
+                       TextWrapping="Wrap" Margin="0,14,0,0"
+                       Text="{x:Static app:Strings.HelpDonateStarHint}"/>
           </StackPanel>
         </ScrollViewer>
       </TabItem>
     </TabControl>
 
+    <!-- ── 底栏：关闭(右对齐, 对话框惯例) ── -->
     <Border Grid.Row="2" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,1,0,0" Padding="24,12">
       <Button x:Name="BtnClose" Content="{x:Static app:Strings.SysOptClose}"
-              Click="BtnClose_Click" Padding="20,8" HorizontalAlignment="Left"/>
+              Click="BtnClose_Click" Padding="20,8" HorizontalAlignment="Right" MinWidth="96"/>
     </Border>
   </Grid>
 </ui:FluentWindow>

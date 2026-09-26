@@ -52,9 +52,39 @@ namespace OmenSuperHub.Views {
       e.Handled = true;
     }
 
+    // ponytail: 帮助长文本按空行分段渲染 —— 段首的【标题】行、═══ 标题 ═══ 行与版本行(v4.x 等)
+    // 提升为强调行, 其余为正文; 内容字符串零改动即获得视觉层次。inline 追加而非 per-line
+    // TextBlock 堆叠, 换行语义与原 Text 多行字符串一致。
+    private static readonly System.Text.RegularExpressions.Regex SectionHeadRegex =
+        new System.Text.RegularExpressions.Regex(@"^(【.+】|═+.*═+|v\d[\dx.].*)$");
+
+    private static void RenderSections(System.Windows.Controls.TextBlock target, string content) {
+      target.Inlines.Clear();
+      bool firstBlock = true;
+      foreach (var block in content.Split(new[] { "\n\n" }, StringSplitOptions.RemoveEmptyEntries)) {
+        if (!firstBlock) {
+          target.Inlines.Add(new System.Windows.Documents.LineBreak());
+          target.Inlines.Add(new System.Windows.Documents.LineBreak());
+        }
+        firstBlock = false;
+        var lines = block.Replace("\r", "").Split('\n');
+        for (int i = 0; i < lines.Length; i++) {
+          string line = lines[i];
+          if (line.Length == 0) continue;
+          var run = new System.Windows.Documents.Run(line);
+          if (i == 0 && SectionHeadRegex.IsMatch(line)) {
+            run.FontWeight = FontWeights.SemiBold;
+            run.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "AccentOmenBrush");
+          }
+          target.Inlines.Add(run);
+          if (i < lines.Length - 1) target.Inlines.Add(new System.Windows.Documents.LineBreak());
+        }
+      }
+    }
+
     private void LoadContent() {
       // ── Tab 1: 更新说明 / Changelog ──────────────────────────────
-      UpdateNotesText.Text =
+      RenderSections(UpdateNotesText,
           "更新说明 / Changelog\n\n" +
           "v4.x 重构更新\n" +
           "- Windows 11 Settings 风格 UI 重构：所有页面统一 CardControl + (*,Auto) 双列布局\n" +
@@ -87,10 +117,10 @@ namespace OmenSuperHub.Views {
           "v2.0\n" +
           "- UI 全面重构：全新黑色极简主题 + 致谢页面\n\n" +
           "v1.x\n" +
-          "- WPF 迁移、GPU频率限制、动态托盘、DB解锁、浮窗、Omen键";
+          "- WPF 迁移、GPU频率限制、动态托盘、DB解锁、浮窗、Omen键");
 
       // ── Tab 2: 风扇配置 / Fan Config ─────────────────────────────
-      FanConfigHelp.Text =
+      RenderSections(FanConfigHelp,
           "风扇配置提供两种基础模式及自定义曲线：\n\n" +
           "【安静模式 (Silent)】针对轻度负载分段优化：50~70°C 区间大幅降低转速以保持安静，高温端保持散热转速，适合日常办公和轻度使用。\n\n" +
           "【降温模式 (Cool)】以 BIOS 默认风扇曲线的 100% 运行，适合游戏和高负载场景。\n\n" +
@@ -100,10 +130,10 @@ namespace OmenSuperHub.Views {
           "【高温自动保护 (AutoFanProtect)】\n" +
            "启用后 CPU 温度超过 95°C 且风扇处于固定转速时，强制切换为降温曲线保护硬件。\n\n" +
           "【风扇除尘 (Fan Clean)】\n" +
-          "反转风扇 30 秒清除内部灰尘。";
+          "反转风扇 30 秒清除内部灰尘。");
 
       // ── Tab 3: 风扇控制 / Fan Control ────────────────────────────
-      FanControlHelp.Text =
+      RenderSections(FanControlHelp,
           "风扇控制模式通过顶部的 ComboBox 切换：\n\n" +
           "【自动 (Auto)】根据风扇配置（安静/降温/自定义曲线）自动调节转速。" +
           "程序读取 CPU 和 GPU 温度插值计算目标转速。\n\n" +
@@ -112,10 +142,10 @@ namespace OmenSuperHub.Views {
           "注意：\n" +
           "- 自动模式下取 CPU 和 GPU 对应转速的最大值\n" +
           "- 关闭 GPU 监控后仅根据 CPU 温度调节\n" +
-          "- 风扇控制需要管理员权限";
+          "- 风扇控制需要管理员权限");
 
       // ── Tab 4: 性能控制 / Performance ────────────────────────────
-      PerformanceHelp.Text =
+      RenderSections(PerformanceHelp,
           "性能控制说明：\n\n" +
           "【性能预设】一键切换整机性能调优方案：\n" +
           "- 极致性能 (Extreme)：PL1=PL2=254W，适合极限游戏/跑分\n" +
@@ -140,10 +170,10 @@ namespace OmenSuperHub.Views {
           "【显示（可展开）】\n" +
           "- 屏幕刷新率：设置显示器刷新率\n" +
           "- 最大帧率：通过 nvidia-smi 限制游戏帧率上限\n\n" +
-          "GPU 核心 / 显存超频（需 DB 解锁后可用）";
+          "GPU 核心 / 显存超频（需 DB 解锁后可用）");
 
       // ── Tab 5: 其他功能 / Other Features ─────────────────────────
-      OtherHelp.Text =
+      RenderSections(OtherHelp,
           "各页面功能介绍：\n\n" +
           "═══ 仪表板 (Dashboard) ═══\n" +
           "实时显示 CPU 温度 / 使用率 / 频率 / 功率 + GPU 温度 / 使用率 / 频率 / 功率 / 显存占用 + 风扇转速 + 内存占用 + 网速。" +
@@ -191,7 +221,7 @@ namespace OmenSuperHub.Views {
           "支持平滑/实时温度显示模式，高/低刷新间隔。\n\n" +
           "═══ 宏 (Macro) ═══\n" +
           "录制键盘操作序列，支持回放、设置触发快捷键、启用/停用。" +
-          "事件序列编辑器支持插入/删除/调整延迟。";
+          "事件序列编辑器支持插入/删除/调整延迟。");
     }
   }
 }
