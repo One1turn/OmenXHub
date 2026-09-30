@@ -49,12 +49,19 @@ namespace OmenSuperHub.Views {
       bool wasLoaded = _instance != null && _instance.IsLoaded;
       EnsureWindow();
       _instance.BeginAnimation(UIElement.OpacityProperty, null);
-      if (!wasLoaded || _trayHidden) {
-        // ponytail: 首次显示 / 从托盘恢复 — Show() 前必须 Opacity=0,否则 WPF 在 Show()
-        // 后到 FadeIn 设 Opacity=0 之间会渲染一帧 Opacity=1 的窗口,此时 Mica 背景尚未
-        // 初始化完成,呈现白色窗口闪一下。FadeIn 内部也会设 0,但 Show() 和 FadeIn 之间
-        // 已有一帧渲染间隔。参考 StartTrayOnly() 用 Opacity=0 隐藏首帧的写法。
+      if (_trayHidden) {
+        // ponytail: 托盘恢复 — StartTrayOnly 已 Show 过一次(Loaded 已跑、Mica 已初始化),
+        // 直接全不透明显示。不走 FadeIn:其 BeginAnimation 竞态(注释见 FadeIn 看门狗)
+        // 正是"冷启动首点托盘出任务栏按钮但主界面隐形、再点才出"的根因;看门狗只能 350ms 后救,
+        // 救不了首点手感。此路径从根上不进动画竞态面。
         _trayHidden = false;
+        _instance.Opacity = 1;
+        _instance.Show();
+        _instance.ResyncFrontendIfReleased();
+        _instance.Activate();
+      } else if (!wasLoaded) {
+        // 真·首次显示(正常启动走 ShowInstance,无 StartTrayOnly 预 Show):
+        // Show 前必须 Opacity=0,否则 Mica 未初始化先渲一帧白闪,保留 FadeIn 淡入。
         _instance.Opacity = 0;
         _instance.Show();
         _instance.ResyncFrontendIfReleased();
@@ -89,37 +96,26 @@ namespace OmenSuperHub.Views {
       //      and WindowBackgroundManager.UpdateBackground was never called).
       //  3) A PresentationSource exists — required by the WPF ContextMenu
       //     popup to render.
-      // Shown minimized + ShowActivated=false + no taskbar → minimized HWNDs are
-      // never composited on screen, so nothing can flash regardless of DWM timing.
+      // ponytail: 首帧压制用「屏幕外定位」而非 Minimized — Minimized 不上屏靠 DWM
+      // cloaking,与 Opacity=0(Show 后才生效)一样存在冷启动漏一帧的窗口,实测表现为
+      // 左下角小方块闪现;屏幕外坐标是物理保证,任何合成时序下都不可见。
+      // 必须先切 WindowStartupLocation=Manual:XAML 默认 CenterScreen 会在 Show 时
+      // 强制重算位置,覆盖下面的屏幕外坐标(不改的话小方块升级成居中白屏)。
+      // 额外收益:全程不进 Minimized,RestoreBounds 不会被 Show/Hide 序列污染成
+      // 0×0/左下角脏值,issue #25 的事后尺寸重置补丁连同 SW_RESTORE 双 Hide 补丁一并删除。
       _instance.ShowInTaskbar = false;
       _instance.ShowActivated = false;
-      _instance.Opacity = 0;
-      // ponytail: Opacity=0 的分层属性是 HWND 显示之后才生效的,冷启动时 DWM 会先
-      // 合成一帧尚未渲染的窗口 → 白屏闪一下再被 Hide。最小化创建的 HWND 不上屏,
-      // 从根上消除首帧可见性。
-      _instance.WindowState = WindowState.Minimized;
-      _instance.Show();   // fires Loaded synchronously, creates HWND + PresentationSource
-      _instance.Hide();
-      // WPF 对隐藏窗口设 WindowState=Normal 内部走 SW_RESTORE,会把窗口重新显示
-      // 出来 — 趁 Opacity=0 且无任务栏按钮时归位 Normal 再补一次 Hide,让托盘
-      // 唤起路径看到的状态与旧实现完全一致 (Hidden + Normal + Opacity=1)。
-      _instance.WindowState = WindowState.Normal;
-      _instance.Hide();
-      _instance.ShowInTaskbar = true;
-      _instance.Opacity = 1;
-      // ponytail: 消除首帧白屏的 Minimized→Show 序列会在窗口尚未完成布局时把
-      // RestoreBounds 写成 0×0/左下角脏值(issue #25 自启首点托盘小窗)。此处趁
-      // Loaded 已跑、布局已完成,显式重置到 XAML 默认尺寸并居中,覆盖脏 RestoreBounds,
-      // 首次 ShowInstance 才能以正常尺寸唤出。
+      _instance.WindowStartupLocation = WindowStartupLocation.Manual;
       _instance.Width = 1150;   // 与 MainWindow.xaml 的 Width/Height 一致
       _instance.Height = 750;
+      _instance.Left = -32000;
+      _instance.Top = -32000;
+      _instance.Show();   // fires Loaded synchronously, creates HWND + PresentationSource; 首帧在屏幕外
+      _instance.Hide();
       _instance.Left = (System.Windows.SystemParameters.WorkArea.Width - _instance.Width) / 2;
       _instance.Top = (System.Windows.SystemParameters.WorkArea.Height - _instance.Height) / 2;
-      _instance.WindowState = WindowState.Normal;
-    }
-
-    public static void ApplyLanguageToInstance() {
-      if (_instance == null) return;
+      _instance.ShowInTaskbar = true;
+      _instance.Opacity = 1;
     }
 
     public static void NavigateToPage(string pageTag) {
@@ -392,10 +388,12 @@ namespace OmenSuperHub.Views {
               src = System.Windows.Media.VisualTreeHelper.GetParent(src);
             }
             if (!inPage) return;
-            // Don't intercept when any ComboBox drop-down is open
-            if (HasOpenComboBox(page)) return;
+            // ponytail: 先查滚动宿主(O(depth) 祖先链) — 页面无滚动直接返回,
+            // 免掉 HasOpenComboBox 的 O(n) 全子树扫描。两检查皆纯判断,顺序交换行为等价。
             var dsv = FindScrollHost(page);
             if (dsv == null || dsv.ScrollableHeight <= 0) return;
+            // Don't intercept when any ComboBox drop-down is open
+            if (HasOpenComboBox(page)) return;
             if (ev.Delta > 0)
               dsv.ScrollToVerticalOffset(Math.Max(0, dsv.VerticalOffset - 60));
             else
@@ -703,8 +701,7 @@ namespace OmenSuperHub.Views {
     }
 
 	    void UpdateStatusBar() {
-	      string icon = HardwareService.PowerOnline ? "\U0001f50c" : "\U0001f50b";
-	      StatusBarIcon.Text = icon;
+	      StatusBarIcon.Symbol = HardwareService.PowerOnline ? SymbolRegular.BatteryCharge24 : SymbolRegular.Battery024;
 	      StatusBarText.Text = Strings.MainWindowStatusBarFormat(HardwareService.CPUTemp, HardwareService.GPUTemp);
 	    }
 

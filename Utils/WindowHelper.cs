@@ -10,7 +10,14 @@ namespace OmenSuperHub.Utils {
   internal static class WindowHelper {
     public static void DetachOwnerOnClose(Window w) {
       if (w == null) return;
-      w.Closing += (s, e) => { if (w.Owner != null) w.Owner = null; };
+      w.Closing += (s, e) => {
+        if (w.Owner == null) return;
+        // ponytail: 模态弹窗(ShowDialog)在 Closing 期间 _showingAsDialog 仍为 true,WPF 冻结了
+        // Owner(Window.Owner setter 抛 CantSetOwnerAfterDialogIsShown)。此时断开不可能、也不需要 —
+        // WPF 自己的 DoDialogHide 会完成 owner 交接。非模态窗口(Show)照旧断开 Win32 owner,保住原修复。
+        try { w.Owner = null; }
+        catch (System.InvalidOperationException) { }
+      };
     }
   }
 }

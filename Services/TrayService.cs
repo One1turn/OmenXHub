@@ -384,9 +384,16 @@ namespace OmenSuperHub.Services {
       // so hiding the main window (with the floating bar off) actually lets the UI thread sleep.
       Views.FloatingWindow.UpdateAllTextTicked();
 
-      if (ConfigService.CustomIcon == "dynamic")
-        GenerateDynamicIcon((int)HardwareService.CPUTemp);
+      // ponytail: 温度没变就跳过 —— GenerateDynamicIcon 每拍新建 Bitmap/Font/Graphics +
+      // MeasureString/DrawString + GetHicon + PNG 编码 + 两次 Shell_NotifyIcon(全在 1s tick 上)。
+      // 温度 1 位有效、drawing 结果只取决于它,不变时整串是纯浪费。_lastRenderedTemp 由
+      // ApplyIconStyle 置哨兵强制重绘(切图标样式/还原配置时必须刷新)。天花板:仅按整度去重。
+      if (ConfigService.CustomIcon == "dynamic") {
+        int temp = (int)HardwareService.CPUTemp;
+        if (temp != _lastRenderedTemp) { _lastRenderedTemp = temp; GenerateDynamicIcon(temp); }
+      }
     }
+    static int _lastRenderedTemp = int.MinValue;
 
     static void UpdateTooltipText() {
       try {
@@ -897,7 +904,7 @@ namespace OmenSuperHub.Services {
 
     static void RestoreDisplay() {
       if (ConfigService.RefreshRate > 0)
-        ApplyRefreshRate(ConfigService.RefreshRate);
+        ApplyRefreshRate(null, ConfigService.RefreshRate);
       // ponytail: resolution is stored as "WxH"; replay it on boot so the user's last choice sticks.
       if (!string.IsNullOrEmpty(ConfigService.Resolution)) {
         var parts = ConfigService.Resolution.Split('x');
@@ -1095,13 +1102,24 @@ namespace OmenSuperHub.Services {
       });
     }
 
-    internal static void ApplyRefreshRate(int hz) {
+    // ponytail: 三份 ApplyRefreshRate(PerfPage/AutomationProcessor/本类旧版)合一。
+    // deviceName 空/null = 主显。基准取 PerfPage 版语义: 枚举当前 DEVMODE,失败直接放弃
+    // (旧本类版枚举失败会把全零 DEVMODE 发出去);同频跳过;ChangeDisplaySettingsEx;
+    // 失败回滚原频(AutomationProcessor 版语义)。不再 CDS_UPDATEREGISTRY — 开机恢复/
+    // 预设/自动化每次都会重放,无需写注册表持久化。
+    internal static void ApplyRefreshRate(string deviceName, int hz) {
       var dm = new NativeMethods_Display.DEVMODE();
-      dm.dmSize = (short)System.Runtime.InteropServices.Marshal.SizeOf(dm);
-      NativeMethods_Display.EnumDisplaySettings(null, NativeMethods_Display.ENUM_CURRENT_SETTINGS, ref dm);
+      dm.dmSize = (short)System.Runtime.InteropServices.Marshal.SizeOf(typeof(NativeMethods_Display.DEVMODE));
+      if (!NativeMethods_Display.EnumDisplaySettings(deviceName, NativeMethods_Display.ENUM_CURRENT_SETTINGS, ref dm)) return;
+      if (dm.dmDisplayFrequency == hz) return;
+      int prevHz = dm.dmDisplayFrequency;
       dm.dmDisplayFrequency = hz;
-      dm.dmFields = NativeMethods_Display.DM_DISPLAYFREQUENCY | NativeMethods_Display.DM_PELSWIDTH | NativeMethods_Display.DM_PELSHEIGHT;
-      NativeMethods_Display.ChangeDisplaySettings(ref dm, NativeMethods_Display.CDS_UPDATEREGISTRY);
+      dm.dmFields = NativeMethods_Display.DM_DISPLAYFREQUENCY;
+      int ret = NativeMethods_Display.ChangeDisplaySettingsEx(deviceName, ref dm, IntPtr.Zero, 0, IntPtr.Zero);
+      if (ret != 0) {
+        dm.dmDisplayFrequency = prevHz;
+        NativeMethods_Display.ChangeDisplaySettingsEx(deviceName, ref dm, IntPtr.Zero, 0, IntPtr.Zero);
+      }
     }
 
     // ══════════════════════════════════════════════════════
@@ -1147,6 +1165,7 @@ namespace OmenSuperHub.Services {
     }
 
     internal static void ApplyIconStyle() {
+      _lastRenderedTemp = int.MinValue;   // 强制重绘(tick 去重会挡住不变温度,样式切换必须无条件刷新)
       switch (ConfigService.CustomIcon) {
         case "custom": SetCustomIcon(); break;
         case "dynamic": GenerateDynamicIcon((int)HardwareService.CPUTemp); break;
@@ -1217,6 +1236,16 @@ namespace OmenSuperHub.Services {
       } catch (Exception ex) {
         fails.Add($"RenderTempIcon 抛异常: {ex.Message}");
       }
+      // 去重哨兵契约: ApplyIconStyle 入口必须先无条件重置 _lastRenderedTemp 再进渲染分支 ——
+      // 若 reset 缺失/被挪到渲染之后,从其它样式切回 dynamic 且温度恰未变时,1s tick 的去重会
+      // 跳过重绘,图标冻在旧样式上(用户可见、无任何日志)。--selftest 无托盘(TrayIcon=null):
+      // 渲染分支必然 NPE,而这恰好证明 reset 先于一切副作用执行 —— 抛点在 reset 之后即通过。
+      int savedTemp = _lastRenderedTemp;
+      _lastRenderedTemp = 55;   // 预置非哨兵值:若 reset 缺失,断言才能真的 FAIL(否则与初值重合,空验证)
+      try { ApplyIconStyle(); } catch { }
+      if (_lastRenderedTemp != int.MinValue)
+        fails.Add("ApplyIconStyle 未重置动态图标去重哨兵(切样式后同温 tick 不再重绘)");
+      _lastRenderedTemp = savedTemp;
       return fails.Count == 0 ? "PASS TrayService dynamic-icon render"
         : "FAIL TrayService dynamic-icon:\n  " + string.Join("\n  ", fails);
     }
