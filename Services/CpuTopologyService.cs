@@ -104,8 +104,8 @@ namespace OmenSuperHub.Services {
     // AllFlags@19)。旧声明字段序与原生布局错位(且注释"bit0=SMT"实为 RealTime 位),
     // Type 又误读偏移 0 的 Size —— 本路径曾恒返回空。偏移族与 CpuAffinity/AffinityTopology
     // .QueryCpuSetEfficiency 同一基准实现。
-    static List<(int Lpi, int Core, byte Eff)> GetSystemCpuSets() {
-      var result = new List<(int Lpi, int Core, byte Eff)>();
+    static List<(int Lpi, int Core, byte Eff, int Group)> GetSystemCpuSets() {
+      var result = new List<(int Lpi, int Core, byte Eff, int Group)>();
       int bufSize = 0;
       GetSystemCpuSetInformation(IntPtr.Zero, 0, out bufSize, IntPtr.Zero, 0);
       if (bufSize <= 0) return result;
@@ -119,10 +119,13 @@ namespace OmenSuperHub.Services {
           if (size == 0) break;
           if (Marshal.ReadInt32(buf, offset + 4) == 0) {   // Type == CpuSetInformation
             ushort group = (ushort)Marshal.ReadInt16(buf, offset + 12);
-            int lpi = Marshal.ReadByte(buf, offset + 14);
             int core = Marshal.ReadByte(buf, offset + 15);
             byte eff = Marshal.ReadByte(buf, offset + 18);
-            if (group == 0 && lpi < 64) result.Add((lpi, core, eff));
+            // 全局处理器号 = Group*64 + 组内号(MS Processor Groups 约定,单组下与旧值恒等;
+            // ThreadBindingService 的 CpuSets 绑定按此号消费)。旧版丢弃 group!=0 条目,
+            // 多组机上拓扑被截断到组 0。
+            int lpi = Marshal.ReadByte(buf, offset + 14) + (int)group * 64;
+            result.Add((lpi, core, eff, group));
           }
           offset += (int)size;
         }
@@ -165,14 +168,15 @@ namespace OmenSuperHub.Services {
         // 方法1: GetSystemCpuSetInformation (Win10+, 最精确的 CPU 拓扑)
         var cpuSets = GetSystemCpuSets();
         if (cpuSets.Count > 0) {
-          // SMT 兄弟 = 同一 CoreIndex 出现多次;首现线程标非 SMT,后续标 SMT。
-          // (旧实现用 AllFlags bit0,那是 RealTime 位不是 SMT 位,恒 false。)
-          var seen = new HashSet<int>();
+          // SMT 兄弟 = 同一 (Group,CoreIndex) 出现多次;首现线程标非 SMT,后续标 SMT。
+          // (旧实现用 AllFlags bit0,那是 RealTime 位不是 SMT 位,恒 false。键须含组号:
+          // 组内核号各组都从 0 起,多组时纯 CoreIndex 会把跨组同号核误配成兄弟线程。)
+          var seen = new HashSet<(int, int)>();
           foreach (var cs in cpuSets) {
-            bool isSmt = !seen.Add(cs.Core);
+            bool isSmt = !seen.Add((cs.Group, cs.Core));
             cores.Add(new CoreInfo {
               LogicalIndex = cs.Lpi,
-              Group = 0,
+              Group = cs.Group,
               CoreIndex = cs.Core,
               EfficiencyClass = cs.Eff,
               IsSmt = isSmt,
@@ -229,8 +233,9 @@ namespace OmenSuperHub.Services {
 
     static List<CoreInfo> DetectFromLogicalProcessorInfo() {
       // ponytail: 降级路径 —— 仅当 GetSystemCpuSetInformation 不可用时触发(现方法1已修好,
-      // 常态不走)。logIdx=累加器假设单处理器组且掩码位连续(笔记本恒成立);跨组机型
-      // 位号会错位,但 ThreadBindingService 也只处理 group0,故接受此边界不额外修。
+      // 常态不走)。逻辑索引按 Group*64+bit 全局编号,与 CpuSet 路径及 ThreadBindingService
+      // 的 CpuSets 绑定同一约定(旧版用累加器,跨组位号错位;ThreadBindingService 已改走
+      // CpuSets 后此假设不再成立,故一并修正)。
       var cores = new List<CoreInfo>();
       var smtFlags = new HashSet<int>(); // 哪些逻辑索引是 SMT
       var efficiencyMap = new Dictionary<int, int>(); // 逻辑索引 → 效率等级
@@ -265,7 +270,7 @@ namespace OmenSuperHub.Services {
               // 解码 mask 中的每个位
               for (int bit = 0; bit < 64; bit++) {
                 if ((aff.Mask & (1UL << bit)) != 0) {
-                  int logIdx = groupAffs.Count;
+                  int logIdx = aff.Group * 64 + bit;   // 全局号,与 CpuSet 路径同一约定(旧版用累加器,跨组错位)
                   groupAffs.Add((logIdx, aff));
                   if (isSmt) smtFlags.Add(logIdx);
                   efficiencyMap[logIdx] = procRel.EfficiencyClass;

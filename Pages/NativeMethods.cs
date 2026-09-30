@@ -76,6 +76,23 @@ namespace OmenSuperHub.Pages {
       Debug.Assert(Marshal.SizeOf(typeof(DISPLAYCONFIG_PATH_TARGET_INFO)) == 48, "PATH_TARGET_INFO must be 48 bytes");
       Debug.Assert(Marshal.SizeOf(typeof(DISPLAYCONFIG_PATH_INFO)) == 72, "PATH_INFO must be 72 bytes");
       Debug.Assert(Marshal.SizeOf(typeof(DISPLAYCONFIG_MODE_INFO)) == 64, "MODE_INFO must be 64 bytes");
+      Debug.Assert(Marshal.SizeOf(typeof(DISPLAYCONFIG_VIDEO_SIGNAL_INFO)) == 48, "VSI must be 48 bytes");
+    }
+
+    // ponytail: --selftest 的 Release 常开尺寸闸(上面的 Debug.Assert 在 Release 被编译移除,
+    // 而 171-176 行注释记过这里真踩过堆损坏)。基准 = wingdi.h SDK 10.0.26100 逐字节核对
+    // (2026-09-30):VSI=48——其 union 两成员都是 UINT32(4 字节),无"第三个 8 字节联合"
+    // (评审曾误报 MODE_INFO 应为 72,按头文件核实 64 才是对的,勿再"修")。
+    public static string SelfCheck() {
+      var fails = new System.Collections.Generic.List<string>();
+      void Chk(string n, int actual, int expect) { if (actual != expect) fails.Add($"{n} = {actual},应为 {expect}"); }
+      Chk("PATH_SOURCE_INFO", Marshal.SizeOf(typeof(DISPLAYCONFIG_PATH_SOURCE_INFO)), 20);
+      Chk("PATH_TARGET_INFO", Marshal.SizeOf(typeof(DISPLAYCONFIG_PATH_TARGET_INFO)), 48);
+      Chk("PATH_INFO", Marshal.SizeOf(typeof(DISPLAYCONFIG_PATH_INFO)), 72);
+      Chk("MODE_INFO", Marshal.SizeOf(typeof(DISPLAYCONFIG_MODE_INFO)), 64);
+      Chk("VIDEO_SIGNAL_INFO", Marshal.SizeOf(typeof(DISPLAYCONFIG_VIDEO_SIGNAL_INFO)), 48);
+      return fails.Count == 0 ? "PASS NativeMethods DISPLAYCONFIG sizes"
+        : "FAIL NativeMethods DISPLAYCONFIG sizes:\n  " + string.Join("\n  ", fails);
     }
     // ponytail: SDK has union {videoStandard; AdditionalSignalInfo{bitfield}} — C# uses uint for the 4-byte union
     [StructLayout(LayoutKind.Sequential)]

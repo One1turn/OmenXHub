@@ -23,6 +23,9 @@ namespace OmenSuperHub.Services.NetworkBoost {
     public static List<NicInfo> SelectedNics { get; private set; } = new List<NicInfo>();
     public static bool IsRunning { get; private set; }
     public static bool IsTun { get; private set; }
+    // ponytail: IsRunning 是置位标志,只在 Start/Stop 时变;TUN 模式回查 TunManager 的活性句柄,
+    // 否则 sing-box 中途退出(提权失败/wintun 加载失败/运行期错误)后 UI 恒显"运行中"。
+    public static bool IsEffectivelyRunning => IsRunning && (!IsTun || TunManager.IsRunning);
     public static int TotalConnections { get; private set; }
     public static double TotalDownMbps { get; private set; }
     public static double TotalUpMbps { get; private set; }

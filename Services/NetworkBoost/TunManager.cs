@@ -73,6 +73,34 @@ namespace OmenSuperHub.Services.NetworkBoost {
     }
 
     static Process _proc;
+    static IntPtr _hJob;   // sing-box 的 kill-on-close Job(宿主死亡时由内核连带清掉孤儿)
+
+    // ponytail: sing-box 绝不能活得比宿主久——宿主被杀/崩溃后 sing-box 残留时 TUN 默认路由仍在,
+    // 出站全指向已死的 loopback 代理 → 全系统断网黑洞(App.OnExit 只覆盖优雅退出)。
+    // KILL_ON_JOB_CLOSE 是唯一内核级兜底;Win8+ 允许嵌套 Job(计划任务启动场景可用)。
+    static IntPtr CreateKillOnCloseJob() {
+      IntPtr hJob = CpuAffinity.Kernel32.CreateJobObject(IntPtr.Zero, null);
+      if (hJob == IntPtr.Zero) return IntPtr.Zero;
+      var lim = new CpuAffinity.JOBOBJECT_EXTENDED_LIMIT_INFORMATION {
+        BasicLimitInformation = new CpuAffinity.JOBOBJECT_BASIC_LIMIT_INFORMATION {
+          LimitFlags = CpuAffinity.JobLimitFlags.JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
+        }
+      };
+      int size = System.Runtime.InteropServices.Marshal.SizeOf<CpuAffinity.JOBOBJECT_EXTENDED_LIMIT_INFORMATION>();
+      IntPtr ptr = System.Runtime.InteropServices.Marshal.AllocHGlobal(size);
+      bool ok;
+      try {
+        System.Runtime.InteropServices.Marshal.StructureToPtr(lim, ptr, false);
+        ok = CpuAffinity.Kernel32.SetInformationJobObject(hJob,
+          CpuAffinity.JOBOBJECTINFOCLASS.JobObjectExtendedLimitInformation, ptr, (uint)size);
+      } finally { System.Runtime.InteropServices.Marshal.FreeHGlobal(ptr); }
+      if (!ok) { CpuAffinity.Kernel32.CloseHandle(hJob); return IntPtr.Zero; }
+      return hJob;
+    }
+
+    static void CloseJob() {
+      if (_hJob != IntPtr.Zero) { CpuAffinity.Kernel32.CloseHandle(_hJob); _hJob = IntPtr.Zero; }
+    }
 
     public static bool IsRunning {
       get { try { return _proc != null && !_proc.HasExited; } catch { return false; } }
@@ -100,6 +128,14 @@ namespace OmenSuperHub.Services.NetworkBoost {
           _proc = null;
           return false;
         }
+        // 防孤儿兜底:创建/挂接失败只记警告,不拒绝启动(退回修复前行为,好过因防护装不上而不给加速)。
+        _hJob = CreateKillOnCloseJob();
+        if (_hJob == IntPtr.Zero) {
+          Logger.Warn("[TunManager] 防孤儿 Job 创建失败,sing-box 可能存活于宿主进程之外");
+        } else if (!CpuAffinity.Kernel32.AssignProcessToJobObject(_hJob, _proc.Handle)) {
+          Logger.Warn("[TunManager] sing-box 挂接防孤儿 Job 失败");
+          CloseJob();
+        }
         return true;
       } catch (Exception ex) {
         error = ex.Message;
@@ -116,12 +152,36 @@ namespace OmenSuperHub.Services.NetworkBoost {
       } catch { }
       try { _proc?.Dispose(); } catch { }
       _proc = null;
+      CloseJob();
       try {
         var psi = new ProcessStartInfo("route.exe", "delete 0.0.0.0 mask 0.0.0.0 " + SingboxConfigGenerator.TunGateway) {
           UseShellExecute = false, CreateNoWindow = true
         };
         using (var p = Process.Start(psi)) { if (p != null) p.WaitForExit(3000); }
       } catch { }
+    }
+
+    public static string SelfCheck() {
+      // 验证 KILL_ON_JOB_CLOSE 内核语义:起 cmd→挂同型 Job→关句柄→断言进程死。
+      try {
+        var psi = new ProcessStartInfo("cmd.exe", "/c ping -n 30 127.0.0.1 >nul") {
+          UseShellExecute = false, CreateNoWindow = true
+        };
+        using (var p = Process.Start(psi)) {
+          if (p == null) return "FAIL TunManager job selfcheck: 无法启动子进程";
+          IntPtr hJob = CreateKillOnCloseJob();
+          if (hJob == IntPtr.Zero) { try { p.Kill(); } catch { } return "FAIL TunManager job selfcheck: 无法创建 job"; }
+          if (!CpuAffinity.Kernel32.AssignProcessToJobObject(hJob, p.Handle)) {
+            CpuAffinity.Kernel32.CloseHandle(hJob);
+            try { p.Kill(); } catch { }
+            return "FAIL TunManager job selfcheck: AssignProcessToJobObject 失败";
+          }
+          CpuAffinity.Kernel32.CloseHandle(hJob);   // 关句柄应即杀子进程
+          bool dead = p.WaitForExit(5000);
+          if (!dead) { try { p.Kill(); } catch { } return "FAIL TunManager job selfcheck: 子进程在 CloseHandle 后存活"; }
+          return "PASS TunManager job kill-on-close";
+        }
+      } catch (Exception ex) { return "FAIL TunManager job selfcheck: " + ex.Message; }
     }
   }
 }

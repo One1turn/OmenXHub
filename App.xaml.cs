@@ -64,7 +64,11 @@ namespace OmenSuperHub {
           + "\n" + OmenSuperHub.Services.NetworkBoost.BoostService.SelfCheck()
           + "\n" + OmenSuperHub.Services.NetworkBoost.RateLimiter.SelfCheck()
           + "\n" + OmenSuperHub.Services.FanService.SelfCheck()
-          + "\n" + OmenSuperHub.Services.TrayService.SelfCheck();
+          + "\n" + OmenSuperHub.Services.TrayService.SelfCheck()
+          + "\n" + OmenSuperHub.Pages.NativeMethods_Display.SelfCheck()
+          + "\n" + OmenSuperHub.Services.NetworkBoost.TunManager.SelfCheck()
+          + "\n" + OmenSuperHub.Services.ThreadBindingService.SelfCheck()
+          + "\n" + OmenSuperHub.Pages.DashboardPage.GpuPrefSelfCheck();
         // ponytail: 关面板释放前端内存的自检 —— 跑完静态自检后启动一次主窗 → 导航 Dashboard
         // (热缓存 +订阅 OnPresetCycled) → Hide 触发 IsVisibleChanged→ReleaseFrontend → 反射断言
         // 三条:页面缓存清空 / PerfPage.Instance 断开 / OnPresetCycled 订阅归零。任一不成立写 FAIL。

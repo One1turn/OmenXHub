@@ -165,6 +165,7 @@ namespace OmenSuperHub.Services.CpuAffinity {
 
   public static class JobLimitFlags {
     public const uint JOB_OBJECT_LIMIT_AFFINITY = 0x0010;
+    public const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000;
   }
 
   // ══════════════════════════════════════
@@ -219,6 +220,10 @@ namespace OmenSuperHub.Services.CpuAffinity {
 
     [DllImport(K, SetLastError = true)]
     public static extern bool SetProcessAffinityMask(IntPtr hProcess, UIntPtr dwProcessAffinityMask);
+
+    // ponytail: 从 CoreKeepService/XtuService 的私有副本收敛而来(两处签名一致 IntPtr/IntPtr)
+    [DllImport(K, SetLastError = true)]
+    public static extern IntPtr SetThreadAffinityMask(IntPtr hThread, IntPtr dwThreadAffinityMask);
 
     [DllImport(K, SetLastError = true)]
     public static extern uint GetPriorityClass(IntPtr hProcess);

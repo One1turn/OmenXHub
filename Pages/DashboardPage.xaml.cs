@@ -369,19 +369,40 @@ namespace OmenSuperHub.Pages {
       PowerStatusText.Foreground = HardwareService.PowerOnline ? _brushAccentGreen : _brushAccentYellow;
     }
 
-    // ponytail: 传感器行文本统一"读不到显 -"。cpu/gpu 用 <=0(0=监控关/数据不新鲜),
-    // ir/amb/pch/vr 用 <0(WMI byte 读数 0 合法,-1 才是失败)。
-    static string SensorLine(string label, int v, bool zeroMeansOff) =>
-      (zeroMeansOff ? v <= 0 : v < 0) ? label + ": -" : label + ": " + v + " °C";
+    // ponytail: 双列信息行的值写入 — 标签已在 XAML 静态化,这里只写【值】并做 null 防御。
+    static void SetInfoValue(System.Windows.Controls.TextBlock tb, string value) {
+      if (tb != null) tb.Text = value ?? "";
+    }
+
+    // ponytail: NVIDIA 温度墙/功率限制行无值时整行折叠 —— 标签已静态化,若保留空值会露出
+    // "NVIDIA 温度墙:" 的孤立标签(旧版空串是整行不显示)。功率限制值仍走整串(含 W 单位)。
+    void SetNvidiaTjmaxRow(int tj) {
+      if (SysNvidiaTjmaxRow == null || SysNvidiaTjmaxText == null) return;
+      bool on = tj > 0;
+      SysNvidiaTjmaxRow.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+      SysNvidiaTjmaxText.Text = on ? tj + " °C" : "";
+    }
+
+    void SetNvidiaPowerRow(string limitsText) {
+      if (SysNvidiaPowerRow == null || SysNvidiaPowerText == null) return;
+      bool on = !string.IsNullOrEmpty(limitsText);
+      SysNvidiaPowerRow.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+      SysNvidiaPowerText.Text = on ? limitsText : "";
+    }
+
+    // ponytail: 传感器值文本统一"读不到显 -"。cpu/gpu 用 <=0(0=监控关/数据不新鲜),
+    // ir/amb/pch/vr 用 <0(WMI byte 读数 0 合法,-1 才是失败)。标签在 XAML 静态列。
+    static string SensorValue(int v, bool zeroMeansOff) =>
+      (zeroMeansOff ? v <= 0 : v < 0) ? "-" : v + " °C";
 
     /// <summary>UI-only sensor temperature update from pre-fetched data.</summary>
     void RefreshSensorsCore(int cpuT, int gpuT, int ir, int amb, int pch, int vr) {
-      SysCpuTempText.Text = SensorLine(Strings.SysCPUTemp, cpuT, true);
-      SysGpuTempText.Text = SensorLine(Strings.SysGPUTemp, gpuT, true);
-      SysIrSensorText.Text = SensorLine(Strings.SysIRSensor, ir, false);
-      SysAmbientText.Text = SensorLine(Strings.SysAmbient, amb, false);
-      SysPchText.Text = SensorLine(Strings.SysPCH, pch, false);
-      SysVrText.Text = SensorLine(Strings.SysVR, vr, false);
+      SetInfoValue(SysCpuTempText, SensorValue(cpuT, true));
+      SetInfoValue(SysGpuTempText, SensorValue(gpuT, true));
+      SetInfoValue(SysIrSensorText, SensorValue(ir, false));
+      SetInfoValue(SysAmbientText, SensorValue(amb, false));
+      SetInfoValue(SysPchText, SensorValue(pch, false));
+      SetInfoValue(SysVrText, SensorValue(vr, false));
       UpdateExtraTempRows();
     }
 
@@ -397,31 +418,22 @@ namespace OmenSuperHub.Pages {
       return set.Contains(id);
     }
 
-    static string ExtraTempLabel(string id) => id switch {
-      "GPUNV_HOTSPOT" => Strings.SysGpuHotSpot,
-      "CPU_COREMAX" => Strings.SysCpuCoreMax,
-      "CPU_COREAVG" => Strings.SysCpuCoreAvg,
-      "CPU_TJMAX_DISTANCE" => Strings.SysCpuTjmaxDistance,
-      "STORAGE_NVME_0" => Strings.SysNvme,
-      "MOTHERBOARD_SUPERIO" => Strings.SysMotherboard,
-      _ => id,
-    };
-
     void UpdateExtraTempRows() {
-      UpdateExtraTempRow(SysGpuHotSpotText, "GPUNV_HOTSPOT");
-      UpdateExtraTempRow(SysCpuCoreMaxText, "CPU_COREMAX");
-      UpdateExtraTempRow(SysCpuCoreAvgText, "CPU_COREAVG");
-      UpdateExtraTempRow(SysCpuTjmaxDistanceText, "CPU_TJMAX_DISTANCE");
-      UpdateExtraTempRow(SysNvmeText, "STORAGE_NVME_0");
-      UpdateExtraTempRow(SysMotherboardText, "MOTHERBOARD_SUPERIO");
+      UpdateExtraTempRow(SysGpuHotSpotRow, SysGpuHotSpotText, "GPUNV_HOTSPOT");
+      UpdateExtraTempRow(SysCpuCoreMaxRow, SysCpuCoreMaxText, "CPU_COREMAX");
+      UpdateExtraTempRow(SysCpuCoreAvgRow, SysCpuCoreAvgText, "CPU_COREAVG");
+      UpdateExtraTempRow(SysCpuTjmaxDistanceRow, SysCpuTjmaxDistanceText, "CPU_TJMAX_DISTANCE");
+      UpdateExtraTempRow(SysNvmeRow, SysNvmeText, "STORAGE_NVME_0");
+      UpdateExtraTempRow(SysMotherboardRow, SysMotherboardText, "MOTHERBOARD_SUPERIO");
     }
 
-    void UpdateExtraTempRow(System.Windows.Controls.TextBlock tb, string id) {
-      if (tb == null) return;
+    // ponytail: 行实体化为具名 Grid(row),可见性切整行(标签+值);值写 x:Name 的 TextBlock。
+    void UpdateExtraTempRow(System.Windows.Controls.Grid row, System.Windows.Controls.TextBlock tb, string id) {
+      if (row == null || tb == null) return;
       bool on = IsExtraEnabled(id) && Services.HardwareService.HasExtraTemp(id);
-      tb.Visibility = on ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+      row.Visibility = on ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
       int v = (int)Services.HardwareService.GetDisplayExtraTemp(id);
-      tb.Text = (on && v > 0) ? ExtraTempLabel(id) + ": " + v + " °C" : ExtraTempLabel(id) + ": -";
+      tb.Text = (on && v > 0) ? v + " °C" : "-";
     }
 
     void AnimateBar(ProgressBar bar, double newVal) {
@@ -589,9 +601,11 @@ namespace OmenSuperHub.Pages {
         b = (byte)Math.Round(36 + (68 - 36) * t);
       } else {
         double t = Math.Min(1, (pct - 92) / 8.0);
-        r = (byte)Math.Round(239 + (26 - 239) * t);
-        g = (byte)Math.Round(68 + (26 - 68) * t);
-        b = (byte)Math.Round(68 + (26 - 68) * t);
+        // ponytail: >92% 终点由 (26,26,26) 改深红 (200,30,30) —— 原色比暗色主题空轨道
+        // #FF2A2A2A 还暗,满载/满盘时指示条近乎隐形(语义反转)。保留 t 渐变,起点接 92% 的 (239,68,68)。
+        r = (byte)Math.Round(239 + (200 - 239) * t);
+        g = (byte)Math.Round(68 + (30 - 68) * t);
+        b = (byte)Math.Round(68 + (30 - 68) * t);
       }
       var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
       brush.Freeze();
@@ -1105,7 +1119,8 @@ namespace OmenSuperHub.Pages {
           errDialog.ShowDialog();
           return;
         }
-        ConfigService.SetCustomPresetName(preset, newName);
+        if (!ConfigService.SetCustomPresetName(preset, newName))
+          DialogHelper.Warn(Strings.PresetRenameSaveFail, Strings.Hint);
         LoadPresetState();
       }
     }
@@ -1226,25 +1241,21 @@ namespace OmenSuperHub.Pages {
               || ConfigService.SysProductName == Strings.SysUnknown
               || ConfigService.SysProductName == "未知");
       if (!string.IsNullOrEmpty(ConfigService.SysManufacturer) && !staleCache) {
-        SysManufacturerText.Text = Strings.SysManufacturer + ": " + ConfigService.SysManufacturer;
-        SysModelText.Text = Strings.SysModel + ": " + ConfigService.SysModel;
-        SysBiosText.Text = Strings.SysBiosVersion + ": " + ConfigService.SysBios;
-        SysCpuText.Text = Strings.SysCpuModel + ": " + ConfigService.SysCpu;
-        SysGpuText.Text = Strings.SysGpuList + ": " + ConfigService.SysGpu;
-        SysAdapterText.Text = Strings.SysAdapterPower + ": " + ConfigService.SysAdapterPower + " W";
+        SetInfoValue(SysManufacturerText, ConfigService.SysManufacturer);
+        SetInfoValue(SysModelText, ConfigService.SysModel);
+        SetInfoValue(SysBiosText, ConfigService.SysBios);
+        SetInfoValue(SysCpuText, ConfigService.SysCpu);
+        SetInfoValue(SysGpuText, ConfigService.SysGpu);
+        SetInfoValue(SysAdapterText, ConfigService.SysAdapterPower + " W");
         int v = ConfigService.SysValidation;
-	        SysValidationText.Text = Strings.SysModelValidation + ": " + (
-	            v == 2 ? Strings.ValidationGamingProduct :
-	            Strings.ValidationUnsupported);
-        SysBoardText.Text = Strings.SysBoardProduct + ": " + ConfigService.SysBoardProduct;
-        SysCpuTjmaxText.Text = Strings.SysCpuTjMax + ": " + ConfigService.SysCpuTjmax + " °C";
-        SysNvidiaTjmaxText.Text = ConfigService.SysNvidiaTjmax > 0
-            ? Strings.SysNvidiaTjMax + ": " + ConfigService.SysNvidiaTjmax + " °C"
-            : "";
-        SysNvidiaPowerText.Text = !string.IsNullOrEmpty(ConfigService.SysNvidiaPowerMin)
-            ? Strings.SysNvidiaPowerLimitText(ConfigService.SysNvidiaPowerMin + " / " + ConfigService.SysNvidiaPowerMax)
-            : "";
-SysKbLightTypeText.Text = Strings.SysKbType + ": " + GetKeyboardTypeName((NbKeyboardLightingType)ConfigService.SysKbRaw);
+        SetInfoValue(SysValidationText, v == 2 ? Strings.ValidationGamingProduct : Strings.ValidationUnsupported);
+        SetInfoValue(SysBoardText, ConfigService.SysBoardProduct);
+        SetInfoValue(SysCpuTjmaxText, ConfigService.SysCpuTjmax + " °C");
+        SetNvidiaTjmaxRow(ConfigService.SysNvidiaTjmax);
+        SetNvidiaPowerRow(!string.IsNullOrEmpty(ConfigService.SysNvidiaPowerMin)
+            ? ConfigService.SysNvidiaPowerMin + " / " + ConfigService.SysNvidiaPowerMax
+            : null);
+        SetInfoValue(SysKbLightTypeText, GetKeyboardTypeName((NbKeyboardLightingType)ConfigService.SysKbRaw));
 	        // ponytail: PawnIO 状态不缓存，每次页面刷新都重新检测
 	        try {
 	          var pawnIoNow = OmenHardware.IsPawnIOInstalled()
@@ -1307,12 +1318,12 @@ SysKbLightTypeText.Text = Strings.SysKbType + ": " + GetKeyboardTypeName((NbKeyb
         int kbRaw = 0;
 try { kb = GetKeyboardTypeName((NbKeyboardLightingType)(kbRaw = (int)GetKeyboardType())); } catch { }
 	        try {
-          cpuTemp = SensorLine(Strings.SysCPUTemp, (int)HardwareService.GetDisplayCpuTemp(), true);
-          gpuTemp = SensorLine(Strings.SysGPUTemp, (int)HardwareService.GetDisplayGpuTemp(), true);
-          irTemp = SensorLine(Strings.SysIRSensor, GetSensorTemperature(0), false);
-          ambTemp = SensorLine(Strings.SysAmbient, GetSensorTemperature(1), false);
-          pchTemp = SensorLine(Strings.SysPCH, GetSensorTemperature(2), false);
-          vrTemp = SensorLine(Strings.SysVR, GetSensorTemperature(3), false);
+          cpuTemp = SensorValue((int)HardwareService.GetDisplayCpuTemp(), true);
+          gpuTemp = SensorValue((int)HardwareService.GetDisplayGpuTemp(), true);
+          irTemp = SensorValue(GetSensorTemperature(0), false);
+          ambTemp = SensorValue(GetSensorTemperature(1), false);
+          pchTemp = SensorValue(GetSensorTemperature(2), false);
+          vrTemp = SensorValue(GetSensorTemperature(3), false);
         } catch { }
         string _pn = pn, _board = board;
         int _validation = validation, _tj = tj, _nvidiaTj = nvidiaTj, _kbRaw = kbRaw;
@@ -1321,39 +1332,37 @@ try { kb = GetKeyboardTypeName((NbKeyboardLightingType)(kbRaw = (int)GetKeyboard
         Dispatcher.InvokeAsync(() => {
           var updates = new Dictionary<string, object>();
           if (mfr != null) {
-            SysManufacturerText.Text = Strings.SysManufacturer + ": " + mfr;
-            SysModelText.Text = Strings.SysModel + ": " + model;
+            SetInfoValue(SysManufacturerText, mfr);
+            SetInfoValue(SysModelText, model);
             if (ConfigService.SysManufacturer != mfr) { ConfigService.SysManufacturer = mfr; updates["SysManufacturer"] = mfr; }
             if (ConfigService.SysModel != model) { ConfigService.SysModel = model; updates["SysModel"] = model; }
-            SysBiosText.Text = Strings.SysBiosVersion + ": " + bios;
+            SetInfoValue(SysBiosText, bios);
             if (ConfigService.SysBios != bios) { ConfigService.SysBios = bios; updates["SysBios"] = bios; }
-            SysCpuText.Text = Strings.SysCpuModel + ": " + cpu;
+            SetInfoValue(SysCpuText, cpu);
             if (ConfigService.SysCpu != cpu) { ConfigService.SysCpu = cpu; updates["SysCpu"] = cpu; }
-            SysGpuText.Text = Strings.SysGpuList + ": " + gpu;
+            SetInfoValue(SysGpuText, gpu);
             if (ConfigService.SysGpu != gpu) { ConfigService.SysGpu = gpu; updates["SysGpu"] = gpu; }
-            SysAdapterText.Text = Strings.SysAdapterPower + ": " + adapterW + " W";
+            SetInfoValue(SysAdapterText, adapterW + " W");
             if (ConfigService.SysAdapterPower != adapterW) { ConfigService.SysAdapterPower = adapterW; updates["SysAdapterPower"] = adapterW; }
             SysDriverModelText.Text = Strings.SysModel + ": " + model;
           }
           if (ConfigService.SysProductName != (_pn ?? Strings.SysUnknown)) { ConfigService.SysProductName = _pn ?? Strings.SysUnknown; updates["SysProductName"] = _pn ?? Strings.SysUnknown; }
-          SysValidationText.Text = Strings.SysModelValidation + ": " + (
-              _validation >= 2 ? Strings.ValidationGamingProduct :
-              Strings.ValidationUnsupported);
+          SetInfoValue(SysValidationText, _validation >= 2 ? Strings.ValidationGamingProduct : Strings.ValidationUnsupported);
           if (ConfigService.SysValidation != _validation) { ConfigService.SysValidation = _validation; updates["SysValidation"] = _validation; }
-          SysBoardText.Text = Strings.SysBoardProduct + ": " + (_board ?? Strings.SysUnknown);
+          SetInfoValue(SysBoardText, _board ?? Strings.SysUnknown);
           if (ConfigService.SysBoardProduct != (_board ?? Strings.SysUnknown)) { ConfigService.SysBoardProduct = _board ?? Strings.SysUnknown; updates["SysBoardProduct"] = _board ?? Strings.SysUnknown; }
-          SysCpuTjmaxText.Text = Strings.SysCpuTjMax + ": " + _tj + " °C";
+          SetInfoValue(SysCpuTjmaxText, _tj + " °C");
           if (ConfigService.SysCpuTjmax != _tj) { ConfigService.SysCpuTjmax = _tj; updates["SysCpuTjmax"] = _tj; }
-          SysNvidiaTjmaxText.Text = _nvidiaTj > 0 ? Strings.SysNvidiaTjMax + ": " + _nvidiaTj + " °C" : "";
+          SetNvidiaTjmaxRow(_nvidiaTj);
           if (ConfigService.SysNvidiaTjmax != _nvidiaTj) { ConfigService.SysNvidiaTjmax = _nvidiaTj; updates["SysNvidiaTjmax"] = _nvidiaTj; }
           if (_powerLimits != null && _powerLimits[0] > 0) {
-            SysNvidiaPowerText.Text = Strings.SysNvidiaPowerLimitText($"{_powerLimits[0]:F0}W / {_powerLimits[1]:F0}W");
+            SetNvidiaPowerRow($"{_powerLimits[0]:F0}W / {_powerLimits[1]:F0}W");
             string minStr = $"{_powerLimits[0]:F0}W";
             string maxStr = $"{_powerLimits[1]:F0}W";
             if (ConfigService.SysNvidiaPowerMin != minStr) { ConfigService.SysNvidiaPowerMin = minStr; updates["SysNvidiaPowerMin"] = minStr; }
             if (ConfigService.SysNvidiaPowerMax != maxStr) { ConfigService.SysNvidiaPowerMax = maxStr; updates["SysNvidiaPowerMax"] = maxStr; }
           }
-          SysKbLightTypeText.Text = Strings.SysKbType + ": " + (_kb ?? Strings.SysUnknown);
+          SetInfoValue(SysKbLightTypeText, _kb ?? Strings.SysUnknown);
           if (ConfigService.SysKbType != (_kb ?? Strings.SysUnknown)) {
             ConfigService.SysKbType = _kb ?? Strings.SysUnknown;
             updates["SysKbType"] = _kb ?? Strings.SysUnknown;
@@ -1363,12 +1372,12 @@ try { kb = GetKeyboardTypeName((NbKeyboardLightingType)(kbRaw = (int)GetKeyboard
             updates["SysKbRaw"] = _kbRaw;
           }
           if (updates.Count > 0) ConfigService.BatchSave(updates);
-          SysCpuTempText.Text = cpuTemp;
-          SysGpuTempText.Text = gpuTemp;
-          SysIrSensorText.Text = irTemp;
-          SysAmbientText.Text = ambTemp;
-          SysPchText.Text = pchTemp;
-          SysVrText.Text = vrTemp;
+          SetInfoValue(SysCpuTempText, cpuTemp);
+          SetInfoValue(SysGpuTempText, gpuTemp);
+          SetInfoValue(SysIrSensorText, irTemp);
+          SetInfoValue(SysAmbientText, ambTemp);
+          SetInfoValue(SysPchText, pchTemp);
+          SetInfoValue(SysVrText, vrTemp);
           UpdateExtraTempRows();
         }, DispatcherPriority.Background);
       });
@@ -1390,10 +1399,12 @@ try { kb = GetKeyboardTypeName((NbKeyboardLightingType)(kbRaw = (int)GetKeyboard
     async Task RefreshNvidiaPowerLimitAsync() {
       try {
         await Task.Delay(500);
-        var powerLimits = GpuAppManager.GetGpuPowerLimits();
+        // ponytail: nvidia-smi 是同步起进程等退出——Task.Delay 恢复后落回 UI 线程,
+        // 裸调会在页面加载/每次预设切换时卡 UI(先例:同文件 RefreshSysInfo 用 Task.Run 包同类查询)。
+        var powerLimits = await Task.Run(() => GpuAppManager.GetGpuPowerLimits());
         if (powerLimits[0] > 0) {
           await Dispatcher.InvokeAsync(() => {
-            SysNvidiaPowerText.Text = Strings.SysNvidiaPowerLimitText($"{powerLimits[0]:F0}W / {powerLimits[1]:F0}W");
+            SetNvidiaPowerRow($"{powerLimits[0]:F0}W / {powerLimits[1]:F0}W");
             ConfigService.SysNvidiaPowerMin = $"{powerLimits[0]:F0}W";
             ConfigService.SysNvidiaPowerMax = $"{powerLimits[1]:F0}W";
           });
@@ -1588,8 +1599,8 @@ try { kb = GetKeyboardTypeName((NbKeyboardLightingType)(kbRaw = (int)GetKeyboard
       _gpuAppWindow.Closed += (s, _) => { _gpuAppWindow = null; GpuAppList = null; };
       // ponytail: 关闭前断开 Owner — WPF 的 owned window 关闭时会尝试把焦点/激活还给 owner,
       // 当 owner 与模态弹窗(DialogHelper)焦点链交错时可能把主窗口误最小化(实测)。
-      // 断开 Owner 后关闭成为独立窗口关闭,不影响主窗口状态。
-      _gpuAppWindow.Closing += (s, _) => { if (_gpuAppWindow != null) _gpuAppWindow.Owner = null; };
+      // 断开 Owner 后关闭成为独立窗口关闭,不影响主窗口状态。复用共享 helper,勿再内联重复。
+      WindowHelper.DetachOwnerOnClose(_gpuAppWindow);
       RefreshGpuAppList();
       _gpuAppWindow.Show();
     }
@@ -1642,29 +1653,49 @@ try { kb = GetKeyboardTypeName((NbKeyboardLightingType)(kbRaw = (int)GetKeyboard
       RefreshGpuAppList();
     }
 
-    void SetGpuPreference(int value) {
+    // ponytail: 官方文档格式 = HKCU\SOFTWARE\Microsoft\DirectX\UserGpuPreferences 下的 REG_SZ
+    // "GpuPreference=N;"(1=省电 GPU,2=高性能 GPU,值不存在=系统决定)。旧代码往两个键写
+    // DWORD 且取值错位(Auto→2/省电→0/高性能→1),Windows 根本不认,此功能一直静默无效。
+    // AppCompatFlags\GraphicsSettings 键无文档消费方(仓库内也无读回)→ 不再写入。
+    void SetGpuPreference(int officialChoice) {
       var item = GpuAppList.SelectedItem as ListBoxItem;
       var app = item?.Tag as GpuAppManager.GpuAppInfo;
       if (app == null || string.IsNullOrEmpty(app.FilePath)) return;
       try {
         using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(
-            @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\GraphicsSettings"))
-          key?.SetValue(app.FilePath, value, Microsoft.Win32.RegistryValueKind.DWord);
+            @"SOFTWARE\Microsoft\DirectX\UserGpuPreferences")) {
+          if (key == null) return;
+          var val = BuildGpuPreferenceValue(officialChoice);
+          if (val == null) {
+            // 自动 = 系统决定:删值(旧版残留的 DWORD 垃圾一并删掉,自愈)
+            try { key.DeleteValue(app.FilePath, false); }
+            catch (Exception ex) { Logger.Warn($"[DashboardPage] SetGpuPreference delete '{app.FilePath}': {ex.Message}"); }
+          } else {
+            key.SetValue(app.FilePath, val, Microsoft.Win32.RegistryValueKind.String);
+          }
+        }
       } catch (Exception ex) {
-        Logger.Warn($"[DashboardPage] SetGpuPreference AppCompatFlags '{app.FilePath}': {ex.Message}");
-      }
-      try {
-        using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(
-            @"SOFTWARE\Microsoft\DirectX\UserGpuPreferences"))
-          key?.SetValue(app.FilePath, value, Microsoft.Win32.RegistryValueKind.DWord);
-      } catch (Exception ex) {
-        Logger.Warn($"[DashboardPage] SetGpuPreference UserGpuPreferences '{app.FilePath}': {ex.Message}");
+        Logger.Warn($"[DashboardPage] SetGpuPreference '{app.FilePath}': {ex.Message}");
       }
     }
 
-    void GpuAppPrefAuto_Click(object sender, RoutedEventArgs e) { SetGpuPreference(2); }
-    void GpuAppPrefPowerSave_Click(object sender, RoutedEventArgs e) { SetGpuPreference(0); }
-    void GpuAppPrefHighPerf_Click(object sender, RoutedEventArgs e) { SetGpuPreference(1); }
+    // 纯函数:官方编号(0=自动/1=省电/2=高性能)→ 注册表字符串;null = 删值。
+    internal static string BuildGpuPreferenceValue(int officialChoice) =>
+      (officialChoice == 1 || officialChoice == 2) ? $"GpuPreference={officialChoice};" : null;
+
+    public static string GpuPrefSelfCheck() {
+      var fails = new System.Collections.Generic.List<string>();
+      if (BuildGpuPreferenceValue(0) != null) fails.Add("自动应为删值(null)");
+      if (BuildGpuPreferenceValue(1) != "GpuPreference=1;") fails.Add("省电映射错误");
+      if (BuildGpuPreferenceValue(2) != "GpuPreference=2;") fails.Add("高性能映射错误");
+      if (BuildGpuPreferenceValue(9) != null) fails.Add("非法编号应视同 null");
+      return fails.Count == 0 ? "PASS DashboardPage GpuPreference mapping"
+        : "FAIL DashboardPage GpuPreference:\n  " + string.Join("\n  ", fails);
+    }
+
+    void GpuAppPrefAuto_Click(object sender, RoutedEventArgs e) { SetGpuPreference(0); }
+    void GpuAppPrefPowerSave_Click(object sender, RoutedEventArgs e) { SetGpuPreference(1); }
+    void GpuAppPrefHighPerf_Click(object sender, RoutedEventArgs e) { SetGpuPreference(2); }
     void RefreshGpuApps_Click(object sender, RoutedEventArgs e) { RefreshGpuAppList(); }
 
     void RestartGpu_Click(object sender, RoutedEventArgs e) {
