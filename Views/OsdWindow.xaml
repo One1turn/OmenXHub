@@ -8,24 +8,36 @@
         SizeToContent="WidthAndHeight"
         Left="0" Top="0" Opacity="0">
 
-  <Border x:Name="OsdBorder" CornerRadius="8" Padding="16,12"
-          Background="{DynamicResource ContextMenuBackground}"
-          BorderBrush="{DynamicResource ContextMenuBorderBrush}"
-          BorderThickness="1">
-    <Grid>
-      <Grid.ColumnDefinitions>
-        <ColumnDefinition Width="Auto"/>
-        <ColumnDefinition Width="Auto"/>
-      </Grid.ColumnDefinitions>
-      <ui:SymbolIcon x:Name="OsdIcon" Grid.Column="0" FontSize="28"
-                     VerticalAlignment="Center" Margin="0,0,12,0"
-                     Foreground="{DynamicResource ContextMenuForeground}"
-                     Visibility="Collapsed"/>
-      <TextBlock x:Name="OsdText" Grid.Column="1" FontSize="20" FontWeight="SemiBold"
-                 Foreground="{DynamicResource ContextMenuForeground}"
-                 TextAlignment="Left"
-                 VerticalAlignment="Center" MaxWidth="400" TextWrapping="NoWrap"
-                 FontFamily="Microsoft YaHei UI, Segoe UI"/>
-    </Grid>
-  </Border>
+  <!-- ponytail: 外层 Grid Margin 给 DropShadow 留白 — SizeToContent+透明窗口,阴影画在窗口矩形外会被裁掉;
+       单格单子元素(Border),不能用顺序排列。
+       注意: 该留白会被 SizeToContent 算进窗口高度,而堆叠步进用的是 ActualHeight → 留白等于直接
+       变成 OSD 之间的可见间距(原先上下各 24 = 48px 纯空)。故垂直侧按投影实际需要收窄:
+       投影 BlurRadius 20 + ShadowDepth 6 向下 ≈ 需要 16 → 上 4 / 下 16; 横侧仍留 24(不进堆叠间距)。 -->
+  <Grid Margin="24,4,24,16">
+    <Border x:Name="OsdBorder" CornerRadius="8" Padding="16,12"
+            Background="{DynamicResource ContextMenuBackground}"
+            BorderBrush="{DynamicResource ContextMenuBorderBrush}"
+            BorderThickness="1">
+      <Border.Effect>
+        <DropShadowEffect BlurRadius="20" Direction="270"
+                          Opacity="0.28" ShadowDepth="6"
+                          Color="#000000"/>
+      </Border.Effect>
+      <Grid>
+        <Grid.ColumnDefinitions>
+          <ColumnDefinition Width="Auto"/>
+          <ColumnDefinition Width="Auto"/>
+        </Grid.ColumnDefinitions>
+        <ui:SymbolIcon x:Name="OsdIcon" Grid.Column="0" FontSize="28"
+                       VerticalAlignment="Center" Margin="0,0,12,0"
+                       Foreground="{DynamicResource ContextMenuForeground}"
+                       Visibility="Collapsed"/>
+        <TextBlock x:Name="OsdText" Grid.Column="1" FontSize="20" FontWeight="SemiBold"
+                   Foreground="{DynamicResource ContextMenuForeground}"
+                   TextAlignment="Left"
+                   VerticalAlignment="Center" MaxWidth="400" TextWrapping="Wrap"
+                   FontFamily="Microsoft YaHei UI, Segoe UI"/>
+      </Grid>
+    </Border>
+  </Grid>
 </Window>

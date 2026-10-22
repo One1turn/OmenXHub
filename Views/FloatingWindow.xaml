@@ -27,115 +27,115 @@
         <!-- ponytail: separator `|` lives inside each row so it hides when the row is collapsed -->
         <!-- CPU Row -->
         <StackPanel x:Name="CpuRow" Orientation="Horizontal" Margin="0">
-	          <TextBlock Text="{x:Static app:Strings.FloatLabelCpu}" FontFamily="Consolas"
+	          <TextBlock Text="{x:Static app:Strings.FloatLabelCpu}" FontFamily="{DynamicResource MonoFontFamily}"
                      FontWeight="ExtraBold" FontSize="{DynamicResource FontSizeSubtitle}"
                      Foreground="{DynamicResource AccentOmenBrush}" VerticalAlignment="Center" x:Name="CpuLabel"/>
           <StackPanel x:Name="CpuDataStack" Orientation="Vertical" Margin="4,0,0,0">
             <StackPanel Orientation="Horizontal">
-              <TextBlock x:Name="CpuTempText" FontFamily="Consolas"
+              <TextBlock x:Name="CpuTempText" FontFamily="{DynamicResource MonoFontFamily}"
                          FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                          Foreground="#FF6B6B" VerticalAlignment="Center"/>
-              <TextBlock x:Name="CpuPowerText" FontFamily="Consolas"
+              <TextBlock x:Name="CpuPowerText" FontFamily="{DynamicResource MonoFontFamily}"
                          FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                          Foreground="#FFB347" Margin="4,0,0,0" VerticalAlignment="Center"/>
             </StackPanel>
             <StackPanel x:Name="CpuLine2" Orientation="Horizontal">
-              <TextBlock x:Name="CpuUsageText" FontFamily="Consolas"
+              <TextBlock x:Name="CpuUsageText" FontFamily="{DynamicResource MonoFontFamily}"
                          FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                          Foreground="#66BB6A" VerticalAlignment="Center"/>
-              <TextBlock x:Name="CpuFreqText" FontFamily="Consolas"
+              <TextBlock x:Name="CpuFreqText" FontFamily="{DynamicResource MonoFontFamily}"
                          FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                          Foreground="#CE93D8" Margin="4,0,0,0" VerticalAlignment="Center"/>
             </StackPanel>
           </StackPanel>
-          <TextBlock x:Name="Sep1" Text=" | " FontFamily="Consolas" FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
+          <TextBlock x:Name="Sep1" Text=" | " FontFamily="{DynamicResource MonoFontFamily}" FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                      Foreground="#888" VerticalAlignment="Center" Margin="2,0" Visibility="Collapsed"/>
         </StackPanel>
         <!-- GPU Row -->
         <StackPanel x:Name="GpuRow" Orientation="Horizontal" Margin="0">
-	          <TextBlock Text="{x:Static app:Strings.FloatLabelGpu}" FontFamily="Consolas"
+	          <TextBlock Text="{x:Static app:Strings.FloatLabelGpu}" FontFamily="{DynamicResource MonoFontFamily}"
                      FontWeight="ExtraBold" FontSize="{DynamicResource FontSizeSubtitle}"
                      Foreground="{DynamicResource AccentOmenBrush}" VerticalAlignment="Center" x:Name="GpuLabel"/>
           <StackPanel x:Name="GpuDataStack" Orientation="Vertical" Margin="4,0,0,0">
             <StackPanel Orientation="Horizontal">
-              <TextBlock x:Name="GpuTempText" FontFamily="Consolas"
+              <TextBlock x:Name="GpuTempText" FontFamily="{DynamicResource MonoFontFamily}"
                          FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                          Foreground="#FF6B6B" VerticalAlignment="Center"/>
-              <TextBlock x:Name="GpuPowerText" FontFamily="Consolas"
+              <TextBlock x:Name="GpuPowerText" FontFamily="{DynamicResource MonoFontFamily}"
                          FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                          Foreground="#FFB347" Margin="4,0,0,0" VerticalAlignment="Center"/>
             </StackPanel>
             <StackPanel x:Name="GpuLine2" Orientation="Horizontal">
-              <TextBlock x:Name="GpuUsageText" FontFamily="Consolas"
+              <TextBlock x:Name="GpuUsageText" FontFamily="{DynamicResource MonoFontFamily}"
                          FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                          Foreground="#66BB6A" VerticalAlignment="Center"/>
-              <TextBlock x:Name="GpuFreqText" FontFamily="Consolas"
+              <TextBlock x:Name="GpuFreqText" FontFamily="{DynamicResource MonoFontFamily}"
                          FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                          Foreground="#CE93D8" Margin="4,0,0,0" VerticalAlignment="Center"/>
             </StackPanel>
           </StackPanel>
-          <TextBlock x:Name="Sep2" Text=" | " FontFamily="Consolas" FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
+          <TextBlock x:Name="Sep2" Text=" | " FontFamily="{DynamicResource MonoFontFamily}" FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                      Foreground="#888" VerticalAlignment="Center" Margin="2,0" Visibility="Collapsed"/>
         </StackPanel>
         <!-- Memory Row -->
         <StackPanel x:Name="MemRow" Orientation="Horizontal" Margin="0">
-	          <TextBlock Text="{x:Static app:Strings.FloatLabelMem}" FontFamily="Consolas"
+	          <TextBlock Text="{x:Static app:Strings.FloatLabelMem}" FontFamily="{DynamicResource MonoFontFamily}"
                      FontWeight="ExtraBold" FontSize="{DynamicResource FontSizeSubtitle}"
                      Foreground="#66BB6A" VerticalAlignment="Center" x:Name="MemLabel"/>
           <StackPanel x:Name="MemDataStack" Orientation="Vertical" Margin="4,0,0,0">
-            <TextBlock x:Name="MemPctText" FontFamily="Consolas"
+            <TextBlock x:Name="MemPctText" FontFamily="{DynamicResource MonoFontFamily}"
                        FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                        Foreground="#66BB6A" VerticalAlignment="Center"/>
-            <TextBlock x:Name="MemUsedText" FontFamily="Consolas"
+            <TextBlock x:Name="MemUsedText" FontFamily="{DynamicResource MonoFontFamily}"
                        FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                        Foreground="#FFB347" VerticalAlignment="Center"/>
           </StackPanel>
-          <TextBlock x:Name="Sep3" Text=" | " FontFamily="Consolas" FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
+          <TextBlock x:Name="Sep3" Text=" | " FontFamily="{DynamicResource MonoFontFamily}" FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                      Foreground="#888" VerticalAlignment="Center" Margin="2,0" Visibility="Collapsed"/>
         </StackPanel>
         <!-- Network Row -->
         <StackPanel x:Name="NetRow" Orientation="Horizontal" Margin="0">
-	          <TextBlock Text="{x:Static app:Strings.FloatLabelNet}" FontFamily="Consolas"
+	          <TextBlock Text="{x:Static app:Strings.FloatLabelNet}" FontFamily="{DynamicResource MonoFontFamily}"
                      FontWeight="ExtraBold" FontSize="{DynamicResource FontSizeSubtitle}"
                      Foreground="#4DD0E1" VerticalAlignment="Center" x:Name="NetLabel"/>
           <StackPanel x:Name="NetDataStack" Orientation="Vertical" Margin="4,0,0,0">
-            <TextBlock x:Name="NetDownText" FontFamily="Consolas"
+            <TextBlock x:Name="NetDownText" FontFamily="{DynamicResource MonoFontFamily}"
                        FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                        Foreground="#66BB6A" VerticalAlignment="Center"/>
-            <TextBlock x:Name="NetUpText" FontFamily="Consolas"
+            <TextBlock x:Name="NetUpText" FontFamily="{DynamicResource MonoFontFamily}"
                        FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                        Foreground="#FFB347" VerticalAlignment="Center"/>
           </StackPanel>
-          <TextBlock x:Name="Sep4" Text=" | " FontFamily="Consolas" FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
+          <TextBlock x:Name="Sep4" Text=" | " FontFamily="{DynamicResource MonoFontFamily}" FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                      Foreground="#888" VerticalAlignment="Center" Margin="2,0" Visibility="Collapsed"/>
         </StackPanel>
         <!-- FPS Row -->
         <StackPanel x:Name="FpsRow" Orientation="Horizontal" Margin="0">
-	          <TextBlock Text="{x:Static app:Strings.FloatLabelFps}" FontFamily="Consolas"
+	          <TextBlock Text="{x:Static app:Strings.FloatLabelFps}" FontFamily="{DynamicResource MonoFontFamily}"
                      FontWeight="ExtraBold" FontSize="{DynamicResource FontSizeSubtitle}"
                      Foreground="#FF9800" VerticalAlignment="Center" x:Name="FpsLabel"/>
           <!-- ponytail: FPS value + app name stacked vertically inside the bar item, app name on its own line below the number -->
           <StackPanel x:Name="FpsDataStack" Orientation="Vertical" Margin="4,0,0,0">
-            <TextBlock x:Name="FpsValueText" FontFamily="Consolas"
+            <TextBlock x:Name="FpsValueText" FontFamily="{DynamicResource MonoFontFamily}"
                        FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                        Foreground="#FF9800" VerticalAlignment="Center"/>
-            <TextBlock x:Name="FpsAppText" FontFamily="Consolas"
+            <TextBlock x:Name="FpsAppText" FontFamily="{DynamicResource MonoFontFamily}"
                        FontWeight="Bold" FontSize="{DynamicResource FontSizeCaption}"
                        Foreground="#AAA" VerticalAlignment="Center"/>
           </StackPanel>
-          <TextBlock x:Name="Sep5" Text=" | " FontFamily="Consolas" FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
+          <TextBlock x:Name="Sep5" Text=" | " FontFamily="{DynamicResource MonoFontFamily}" FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                      Foreground="#888" VerticalAlignment="Center" Margin="2,0" Visibility="Collapsed"/>
         </StackPanel>
         <!-- Fan Row (last row — no trailing separator) -->
         <StackPanel x:Name="FanRow" Orientation="Horizontal" Margin="0">
-	          <TextBlock Text="{x:Static app:Strings.FloatLabelFan}" FontFamily="Consolas"
+	          <TextBlock Text="{x:Static app:Strings.FloatLabelFan}" FontFamily="{DynamicResource MonoFontFamily}"
                      FontWeight="ExtraBold" FontSize="{DynamicResource FontSizeSubtitle}"
                      Foreground="#4FC3F7" VerticalAlignment="Center" x:Name="FanLabel"/>
           <StackPanel x:Name="FanDataStack" Orientation="Vertical" Margin="4,0,0,0">
-            <TextBlock x:Name="FanSpeed0Text" FontFamily="Consolas"
+            <TextBlock x:Name="FanSpeed0Text" FontFamily="{DynamicResource MonoFontFamily}"
                        FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                        Foreground="#66BB6A" VerticalAlignment="Center"/>
-            <TextBlock x:Name="FanSpeed1Text" FontFamily="Consolas"
+            <TextBlock x:Name="FanSpeed1Text" FontFamily="{DynamicResource MonoFontFamily}"
                        FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                        Foreground="#FFB347" VerticalAlignment="Center"/>
           </StackPanel>

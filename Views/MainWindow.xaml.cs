@@ -49,12 +49,22 @@ namespace OmenSuperHub.Views {
       bool wasLoaded = _instance != null && _instance.IsLoaded;
       EnsureWindow();
       _instance.BeginAnimation(UIElement.OpacityProperty, null);
-      if (!wasLoaded || _trayHidden) {
-        // ponytail: 首次显示 / 从托盘恢复 — Show() 前必须 Opacity=0,否则 WPF 在 Show()
-        // 后到 FadeIn 设 Opacity=0 之间会渲染一帧 Opacity=1 的窗口,此时 Mica 背景尚未
-        // 初始化完成,呈现白色窗口闪一下。FadeIn 内部也会设 0,但 Show() 和 FadeIn 之间
-        // 已有一帧渲染间隔。参考 StartTrayOnly() 用 Opacity=0 隐藏首帧的写法。
+      if (_trayHidden) {
+        // ponytail: 托盘恢复 — StartTrayOnly 已 Show 过一次(Loaded 已跑、Mica 已初始化),
+        // 直接全不透明显示。不走 FadeIn:其 BeginAnimation 竞态(注释见 FadeIn 看门狗)
+        // 正是"冷启动首点托盘出任务栏按钮但主界面隐形、再点才出"的根因;看门狗只能 350ms 后救,
+        // 救不了首点手感。此路径从根上不进动画竞态面。
         _trayHidden = false;
+        _instance.Opacity = 1;
+        _instance.Show();
+        _instance.ResyncFrontendIfReleased();
+        _instance.Activate();
+      } else if (!wasLoaded) {
+        // 真·首次显示(正常启动走 ShowInstance,无 StartTrayOnly 预 Show):
+        // Show 前必须 Opacity=0,否则 Mica 未初始化先渲一帧白闪,保留 FadeIn 淡入。
+        // ponytail: 几何必须在 Show() 之前还原 —— Show 之后设 Width/Left 会先按默认尺寸
+        // 渲一帧再跳位(可见的闪动)。StartTrayOnly(--tray 路径)里也调了同一个方法。
+        _instance.RestoreWindowPlacement();
         _instance.Opacity = 0;
         _instance.Show();
         _instance.ResyncFrontendIfReleased();
@@ -89,37 +99,59 @@ namespace OmenSuperHub.Views {
       //      and WindowBackgroundManager.UpdateBackground was never called).
       //  3) A PresentationSource exists — required by the WPF ContextMenu
       //     popup to render.
-      // Shown minimized + ShowActivated=false + no taskbar → minimized HWNDs are
-      // never composited on screen, so nothing can flash regardless of DWM timing.
+      // ponytail: 首帧压制用「屏幕外定位」而非 Minimized — Minimized 不上屏靠 DWM
+      // cloaking,与 Opacity=0(Show 后才生效)一样存在冷启动漏一帧的窗口,实测表现为
+      // 左下角小方块闪现;屏幕外坐标是物理保证,任何合成时序下都不可见。
+      // 必须先切 WindowStartupLocation=Manual:XAML 默认 CenterScreen 会在 Show 时
+      // 强制重算位置,覆盖下面的屏幕外坐标(不改的话小方块升级成居中白屏)。
+      // 额外收益:全程不进 Minimized,RestoreBounds 不会被 Show/Hide 序列污染成
+      // 0×0/左下角脏值,issue #25 的事后尺寸重置补丁连同 SW_RESTORE 双 Hide 补丁一并删除。
       _instance.ShowInTaskbar = false;
       _instance.ShowActivated = false;
-      _instance.Opacity = 0;
-      // ponytail: Opacity=0 的分层属性是 HWND 显示之后才生效的,冷启动时 DWM 会先
-      // 合成一帧尚未渲染的窗口 → 白屏闪一下再被 Hide。最小化创建的 HWND 不上屏,
-      // 从根上消除首帧可见性。
-      _instance.WindowState = WindowState.Minimized;
-      _instance.Show();   // fires Loaded synchronously, creates HWND + PresentationSource
-      _instance.Hide();
-      // WPF 对隐藏窗口设 WindowState=Normal 内部走 SW_RESTORE,会把窗口重新显示
-      // 出来 — 趁 Opacity=0 且无任务栏按钮时归位 Normal 再补一次 Hide,让托盘
-      // 唤起路径看到的状态与旧实现完全一致 (Hidden + Normal + Opacity=1)。
-      _instance.WindowState = WindowState.Normal;
-      _instance.Hide();
-      _instance.ShowInTaskbar = true;
-      _instance.Opacity = 1;
-      // ponytail: 消除首帧白屏的 Minimized→Show 序列会在窗口尚未完成布局时把
-      // RestoreBounds 写成 0×0/左下角脏值(issue #25 自启首点托盘小窗)。此处趁
-      // Loaded 已跑、布局已完成,显式重置到 XAML 默认尺寸并居中,覆盖脏 RestoreBounds,
-      // 首次 ShowInstance 才能以正常尺寸唤出。
+      _instance.WindowStartupLocation = WindowStartupLocation.Manual;
       _instance.Width = 1150;   // 与 MainWindow.xaml 的 Width/Height 一致
       _instance.Height = 750;
-      _instance.Left = (System.Windows.SystemParameters.WorkArea.Width - _instance.Width) / 2;
-      _instance.Top = (System.Windows.SystemParameters.WorkArea.Height - _instance.Height) / 2;
-      _instance.WindowState = WindowState.Normal;
+      _instance.Left = -32000;
+      _instance.Top = -32000;
+      _instance.Show();   // fires Loaded synchronously, creates HWND + PresentationSource; 首帧在屏幕外
+      _instance.Hide();
+      _instance.RestoreWindowPlacement();
+      _instance.ShowInTaskbar = true;
+      _instance.Opacity = 1;
     }
 
-    public static void ApplyLanguageToInstance() {
-      if (_instance == null) return;
+    /// <summary>还原上次的窗口尺寸/位置(含最大化)。没保存过 → 居中默认尺寸。
+    /// ponytail: 位置做了可见性校验 —— 换了显示器/拔了外接屏后旧坐标可能落在屏幕外,
+    /// 那种情况退回居中, 否则窗口会"启动后看不见"。</summary>
+    void RestoreWindowPlacement() {
+      double w = ConfigService.WinWidth, h = ConfigService.WinHeight;
+      if (w >= MinWidth && h >= MinHeight) {
+        Width = w; Height = h;
+        double l = ConfigService.WinLeft, t = ConfigService.WinTop;
+        if (IsPlacementVisible(l, t, w, h)) { Left = l; Top = t; }
+        else {
+          Left = (SystemParameters.WorkArea.Width - Width) / 2;
+          Top = (SystemParameters.WorkArea.Height - Height) / 2;
+        }
+      } else {
+        Left = (SystemParameters.WorkArea.Width - Width) / 2;
+        Top = (SystemParameters.WorkArea.Height - Height) / 2;
+      }
+      if (ConfigService.WinMaximized) WindowState = WindowState.Maximized;
+    }
+
+    /// <summary>记住当前窗口几何。最大化时保存 RestoreBounds(否则下次还原出来是最大化尺寸)。</summary>
+    void SaveWindowPlacement() {
+      try {
+        var b = WindowState == WindowState.Maximized ? RestoreBounds : new Rect(Left, Top, Width, Height);
+        if (double.IsNaN(b.Width) || b.Width < MinWidth || double.IsNaN(b.Height) || b.Height < MinHeight) return;
+        ConfigService.WinLeft = b.Left;
+        ConfigService.WinTop = b.Top;
+        ConfigService.WinWidth = b.Width;
+        ConfigService.WinHeight = b.Height;
+        ConfigService.WinMaximized = WindowState == WindowState.Maximized;
+        ConfigService.Save("WindowPlacement");
+      } catch (Exception ex) { Logger.Error("[WinPlace] save failed: " + ex.Message); }
     }
 
     public static void NavigateToPage(string pageTag) {
@@ -152,8 +184,7 @@ namespace OmenSuperHub.Views {
       _instance = this;
       // ponytail: restore persisted topmost state — XAML defaults to False
       Topmost = ConfigService.Topmost;
-      PinIcon.Symbol = Topmost ? SymbolRegular.Pin24 : SymbolRegular.PinOff24;
-      PinButton.ToolTip = Topmost ? Strings.MainWindowPinTooltipOn : Strings.MainWindowPinTooltipOff;
+      UpdatePinVisual();
       _pageService = new Services.CachedPageService();
       NavigationView.SetPageService(_pageService);
 
@@ -170,6 +201,9 @@ namespace OmenSuperHub.Views {
       ThemeService.ThemeChanged += OnThemeChanged;
 
       Closing += (s, e) => {
+        // ponytail: 几何在"关到托盘"(Hide)和真正退出两条路径上都要存 —— 用户多数时候是
+        // 关到托盘, 只存真退出那次等于没记。
+        SaveWindowPlacement();
         if (_allowClose) {
           ThemeService.ThemeChanged -= OnThemeChanged;
           if (_wheelHandler != null && _wheelRoot != null)
@@ -392,10 +426,12 @@ namespace OmenSuperHub.Views {
               src = System.Windows.Media.VisualTreeHelper.GetParent(src);
             }
             if (!inPage) return;
-            // Don't intercept when any ComboBox drop-down is open
-            if (HasOpenComboBox(page)) return;
+            // ponytail: 先查滚动宿主(O(depth) 祖先链) — 页面无滚动直接返回,
+            // 免掉 HasOpenComboBox 的 O(n) 全子树扫描。两检查皆纯判断,顺序交换行为等价。
             var dsv = FindScrollHost(page);
             if (dsv == null || dsv.ScrollableHeight <= 0) return;
+            // Don't intercept when any ComboBox drop-down is open
+            if (HasOpenComboBox(page)) return;
             if (ev.Delta > 0)
               dsv.ScrollToVerticalOffset(Math.Max(0, dsv.VerticalOffset - 60));
             else
@@ -699,12 +735,13 @@ namespace OmenSuperHub.Views {
     void OnThemeChanged() {
       Dispatcher.InvokeAsync(() => {
         WindowBackgroundManager.UpdateBackground(this, ApplicationThemeManager.GetAppTheme(), WindowBackdropType.Mica);
+        // 强调色可能随主题/自定义强调色变化,置顶按钮的填充要跟着重取
+        UpdatePinVisual();
       });
     }
 
 	    void UpdateStatusBar() {
-	      string icon = HardwareService.PowerOnline ? "\U0001f50c" : "\U0001f50b";
-	      StatusBarIcon.Text = icon;
+	      StatusBarIcon.Symbol = HardwareService.PowerOnline ? SymbolRegular.BatteryCharge24 : SymbolRegular.Battery024;
 	      StatusBarText.Text = Strings.MainWindowStatusBarFormat(HardwareService.CPUTemp, HardwareService.GPUTemp);
 	    }
 
@@ -712,8 +749,23 @@ namespace OmenSuperHub.Views {
       Topmost = !Topmost;
       ConfigService.Topmost = Topmost;
       ConfigService.Save("Topmost");
+      UpdatePinVisual();
+    }
+
+    /// <summary>置顶按钮视觉:已置顶填 Windows 强调色(状态指示),未置顶保持透明。
+    /// ponytail: 强调色刷子现取不缓存 —— ThemeService 切主题/改强调色时会覆盖
+    /// SystemAccentColorSecondary(ThemeService.cs:97),缓存会拿到旧色。</summary>
+    void UpdatePinVisual() {
       PinIcon.Symbol = Topmost ? SymbolRegular.Pin24 : SymbolRegular.PinOff24;
       PinButton.ToolTip = Topmost ? Strings.MainWindowPinTooltipOn : Strings.MainWindowPinTooltipOff;
+      if (Topmost) {
+        PinButton.Background = TryFindResource("SystemAccentColorSecondaryBrush") as System.Windows.Media.Brush
+                               ?? System.Windows.Media.Brushes.DodgerBlue;
+        PinButton.Foreground = System.Windows.Media.Brushes.White;
+      } else {
+        PinButton.ClearValue(System.Windows.Controls.Control.BackgroundProperty);
+        PinButton.ClearValue(System.Windows.Controls.Control.ForegroundProperty);
+      }
     }
 
     // ══════════════════════════════════════════════════════
@@ -752,6 +804,59 @@ namespace OmenSuperHub.Views {
         return allowed.Contains(tag);
       }
       return true;
+    }
+
+    /// <summary>自检: 窗口几何记忆的纯逻辑部分 —— 保存/恢复往返 + 屏幕外坐标保护 + 单位一致性。</summary>
+    public static string WindowPlacementSelfCheck() {
+      var fails = new List<string>();
+      try {
+        var wa = SystemParameters.WorkArea;
+        double w = Math.Min(1150, wa.Width), h = Math.Min(750, wa.Height);
+
+        // 1) 主屏内坐标: 必须判为可见
+        if (!IsPlacementVisible(wa.Left + 40, wa.Top + 40, w, h)) fails.Add("主屏内坐标被判为不可见");
+
+        // 2) 屏幕外(拔掉外接屏后旧坐标): 必须判为不可见
+        if (IsPlacementVisible(-30000, -30000, w, h)) fails.Add("屏幕外坐标未被拦截");
+        if (IsPlacementVisible(wa.Right + 5000, wa.Top, w, h)) fails.Add("完全在屏幕右侧之外未被拦截");
+
+        // 3) DPI 单位一致性 —— 这是真实踩过的坑: 窗口坐标是 DIP, Forms 是物理像素,
+        //    150% 缩放下差 1.5 倍, 混用会把合法位置判成屏幕外(表现为"位置记忆失效, 每次都居中")。
+        var px = System.Windows.Forms.Screen.PrimaryScreen.WorkingArea;
+        double scale = px.Width / wa.Width;
+        if (scale <= 0 || double.IsNaN(scale)) fails.Add("无法推算 DPI 缩放比");
+        // 用物理像素坐标直接喂进去(未经换算)必须被判不可见 —— 否则说明单位又混了
+        if (scale > 1.2 && IsPlacementVisible(px.Right - 100, wa.Top + 40, w, h))
+          fails.Add("物理像素坐标被误判为 DIP 可见 —— 单位换算可能又混了");
+      } catch (Exception ex) { fails.Add("异常: " + ex.Message); }
+      return fails.Count == 0 ? "[WindowPlacement] PASS" : "[WindowPlacement] FAIL: " + string.Join("; ", fails.ToArray());
+    }
+
+    /// <summary>窗口矩形是否与任一屏幕工作区有足够重叠(至少露出 80×40, 保证能抓到标题栏)。
+    /// ponytail: 单位必须统一 —— 窗口坐标是 DIP, 而 Forms 的 Screen.WorkingArea 是物理像素。
+    /// 用 SystemParameters.WorkArea 得主屏 DIP 尺寸, 反推当前 DPI 缩放比, 再把各屏物理矩形换算成
+    /// DIP。混用单位(150% 缩放下差 1.5 倍)会让边界判定算错、把合法位置判成屏幕外。</summary>
+    static bool IsPlacementVisible(double left, double top, double width, double height) {
+      // 主屏: WPF 已给 DIP, 直接比
+      var primary = SystemParameters.WorkArea;
+      if (Overlaps(left, top, width, height, primary.Left, primary.Top, primary.Right, primary.Bottom)) return true;
+
+      // 副屏: 物理像素 → DIP。scale = 物理宽 / DIP宽
+      var px = System.Windows.Forms.Screen.PrimaryScreen.WorkingArea;
+      double scale = (px.Width > 0 && primary.Width > 0) ? px.Width / primary.Width : 1.0;
+      if (Math.Abs(scale - 1.0) < 0.001) return false;   // 100% 缩放: 主屏之外没有可换算的副屏
+      foreach (var scr in System.Windows.Forms.Screen.AllScreens) {
+        if (scr.Primary) continue;
+        var a = scr.WorkingArea;
+        if (Overlaps(left, top, width, height, a.Left / scale, a.Top / scale, a.Right / scale, a.Bottom / scale))
+          return true;
+      }
+      return false;
+    }
+
+    static bool Overlaps(double l, double t, double w, double h,
+                         double aLeft, double aTop, double aRight, double aBottom) {
+      return l + 80 < aRight && l + w - 80 > aLeft && t + 40 < aBottom && t + h - 40 > aTop;
     }
   }
 }

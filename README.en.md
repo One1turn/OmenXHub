@@ -71,13 +71,25 @@ Record and replay keyboard sequences, with trigger hotkey support and event edit
 
 ### Other
 
-Smart charging, Num Lock, Caps Lock, touchpad lock, HWiNFO64 integration, HTTP API service, AMD CPU undervolt, OMEN Command Center compatibility stub, system optimization window.
+Smart charging, Num Lock, Caps Lock, touchpad lock, HWiNFO64 integration, HTTP API service (with LAN WebUI remote control, see below), AMD CPU undervolt, OMEN Command Center compatibility stub, system optimization window.
 
 ![Other](Preview/Other-Settings.png)
 
+### LAN Monitoring & Remote Control (LAN WebUI)
+
+A built-in single-page WebUI (HTML/CSS/JS in one embedded resource, shipped inside the exe) lets any device on the same subnet read metrics and perform a limited set of actions in a browser. **Off by default**: the HTTP API service itself starts disabled, and LAN access is a security boundary, so it never opens on its own.
+
+- **Enable**: Other → turn on the HTTP API service → turn on LAN access (this adds the `OmenXHub LAN WebUI` firewall rule and switches the listener prefix from `http://localhost:5000/` to `http://+:5000/`) → click "QR / Share Link".
+- **Share**: the dialog shows a QR code and the link `http://<ip>:5000/?token=<token>`; pick the NIC when several are present (virtual adapters are excluded) and copy the link in one click.
+- **Token**: every request except `/ping` requires it. Tick "persistent token" to keep it across restarts (configure the client once) or reset it anytime; the token in the status line is selectable and copyable.
+- **Page**: 12 metric cards (CPU/GPU temperature, power, frequency, load, VRAM, RAM, fan RPM, battery) refreshed every 2 s, plus preset switching, the five fan modes, clean memory, and display off. Landscape phones get a fullscreen monitoring-only view.
+- **Access tiers**: non-loopback (LAN) sources may only read metrics and switch preset / fan mode, clean memory, or turn the display off. Destructive actions — power limits, overclocking, TGP, lighting writes, fan speed and curve, restart/shutdown — stay loopback-only; denied requests return 403 and are logged.
+
 ### Settings
 
-Overlay display (position / layout / font / opacity / multi-monitor), Omen Key, OSD toast, tray icon (default / custom / dynamic), auto-start, custom main logo, theme (dark / light), language, custom background (opacity / Gaussian blur), data localization, debug log.
+Overlay display (position / layout / font / opacity / multi-monitor), Omen Key, OSD toast, tray icon (default / custom / dynamic), auto-start, custom main logo, theme (dark / light), language, custom background (opacity / Gaussian blur), data localization, debug log, OMEN Light Studio stub.
+
+> **OMEN Light Studio stub**: when OGH is uninstalled, a same-named placeholder stub package can be registered from the Settings page so the official OMEN Light Studio passes its install check. Registering the stub requires Windows **Developer Mode** (Windows Settings → Privacy & security → For developers → Developer Mode); the app will prompt and try to enable it for you.
 
 ![Settings](Preview/Settings.png)
 
@@ -106,6 +118,7 @@ Only CPU power, power plan, GPU frequency limit, TGP+PPAB, and dState are bound 
 - HP OMEN / VICTUS gaming laptop with WMI BIOS interface
 - Windows 10/11 64-bit · .NET Framework 4.8
 - Administrative privileges (required for WMI, fan control, driver installation)
+- Registering the OMEN Light Studio stub requires Windows Developer Mode (Settings → Privacy & security → For developers; the app guides you through enabling it — only that feature needs it)
 
 ## Getting Started
 

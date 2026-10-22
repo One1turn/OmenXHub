@@ -11,30 +11,59 @@
         WindowBackdropType="Mica"
         ExtendsContentIntoTitleBar="True"
         Background="Transparent">
+  <!-- ponytail: Wpf.Ui 的 ListBoxItem 选中态直接铺系统强调色(#0078D4 一类的实心蓝),
+       在对话框里是一条横贯整行的蓝条,比主按钮还抢眼。改成本项目同款的低透明强调色,
+       配合 4px 圆角 —— 选中可辨识但不喧宾夺主。作用域仅本窗口。 -->
+  <ui:FluentWindow.Resources>
+    <SolidColorBrush x:Key="ListBoxItemSelectedBackgroundThemeBrush"
+                     Color="{DynamicResource AccentFillColorSecondary}"/>
+    <!-- 选中前景也要给:主题里那条是给实心强调底用的反白/深色,配低透明底会看不清 -->
+    <SolidColorBrush x:Key="ListBoxItemSelectedForegroundThemeBrush"
+                     Color="{DynamicResource TextPrimary}"/>
+    <SolidColorBrush x:Key="MenuBarItemBackgroundSelected"
+                     Color="{DynamicResource AccentFillColorTertiary}"/>
+  </ui:FluentWindow.Resources>
+
   <Grid>
     <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
+    <!-- ponytail: Title 只给窗口/任务栏;实际渲染的是 Header —— 图标+标题自排才能控间距。
+         Header 必须 IsHitTestVisible=False,否则 TitleBar 认为鼠标压在内容上,不发 HTCAPTION,拖不动。 -->
+    <ui:TitleBar Style="{StaticResource OmenDialogTitleBar}" Grid.Row="0" Title="{x:Static app:Strings.BoostRulesSelectProcess}"
+                 ShowMinimize="False" ShowMaximize="False" ShowClose="True" CanMaximize="False">
+      <ui:TitleBar.Header>
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" IsHitTestVisible="False">
+          <ui:SymbolIcon Symbol="Apps24" FontSize="{DynamicResource FontSizeSubheader}"
+                         Foreground="{DynamicResource AccentOmenBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+          <TextBlock Text="{x:Static app:Strings.BoostRulesSelectProcess}" FontSize="{DynamicResource FontSizeTitle}"
+                     FontWeight="SemiBold" VerticalAlignment="Center"/>
+        </StackPanel>
+      </ui:TitleBar.Header>
+    </ui:TitleBar>
+
     <!-- 搜索栏 -->
-    <Border Grid.Row="0" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,0,0,1" Padding="16,12">
-      <StackPanel>
-        <TextBlock x:Name="DialogTitle" Text="{x:Static app:Strings.BoostRulesSelectProcess}"
-                   FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Margin="0,0,0,10"/>
-        <ui:TextBox x:Name="SearchBox" PlaceholderText="{x:Static app:Strings.BoostRulesSearchProcess}"
-                    TextChanged="SearchBox_TextChanged" Icon="Search24"/>
-      </StackPanel>
+    <Border Grid.Row="1" Padding="16,0,16,10">
+      <ui:TextBox x:Name="SearchBox" PlaceholderText="{x:Static app:Strings.BoostRulesSearchProcess}"
+                  TextChanged="SearchBox_TextChanged" Icon="Search24"/>
     </Border>
 
     <!-- 进程列表 -->
-    <Grid Grid.Row="1" Margin="12,8,12,0">
+    <Grid Grid.Row="2" Margin="16,8,16,0">
       <ListBox x:Name="ProcList" MouseDoubleClick="ProcList_MouseDoubleClick">
         <ListBox.ItemContainerStyle>
-          <Style TargetType="ListBoxItem">
-            <Setter Property="Padding" Value="12,6"/>
-            <Setter Property="FontSize" Value="13"/>
+          <!-- ponytail: 原来这里是个不带 BasedOn 的 Style —— 显式 Style 会整个顶掉隐式样式,
+               选中态退回 Aero2(直角 + 硬边框),与 Mica 窗口里的圆角控件不是一套语言。
+               BasedOn 隐式样式(来自 Wpf.Ui ControlsDictionary)只调间距。 -->
+          <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+            <Setter Property="Padding" Value="12,7"/>
+            <Setter Property="FontSize" Value="{DynamicResource FontSizeSubtitle}"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+            <Setter Property="Border.CornerRadius" Value="4"/>
           </Style>
         </ListBox.ItemContainerStyle>
         <ListBox.ItemsPanel>
@@ -44,18 +73,16 @@
         </ListBox.ItemsPanel>
       </ListBox>
       <TextBlock x:Name="EmptyHint" Text="{x:Static app:Strings.BoostRulesNoMatch}"
-                 HorizontalAlignment="Center" VerticalAlignment="Center"
-                 FontSize="{DynamicResource FontSizeSubtitle}" Foreground="{DynamicResource TextSecondaryBrush}"
-                 Visibility="Collapsed"/>
+                 Style="{StaticResource OmenEmptyState}" Visibility="Collapsed"/>
     </Grid>
 
     <!-- 按钮栏 -->
-    <Border Grid.Row="2" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,1,0,0" Padding="16,12">
+    <Border Grid.Row="3" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,1,0,0" Padding="16,12">
       <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
         <ui:Button x:Name="OkBtn" Content="{x:Static app:Strings.BoostRulesSelectProcess}"
-                   Click="OkBtn_Click" Appearance="Primary" Margin="0,0,8,0"/>
-        <ui:Button x:Name="CancelBtn" Content="Cancel"
-                   Click="CancelBtn_Click"/>
+                   Click="OkBtn_Click" Appearance="Primary" MinWidth="90" Height="32" Margin="0,0,8,0"/>
+        <ui:Button x:Name="CancelBtn" Content="{x:Static app:Strings.ButtonCancel}"
+                   Click="CancelBtn_Click" MinWidth="90" Height="32"/>
       </StackPanel>
     </Border>
   </Grid>

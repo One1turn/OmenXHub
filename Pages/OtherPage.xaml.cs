@@ -22,27 +22,45 @@ namespace OmenSuperHub.Pages
         public OtherPage()
         {
             InitializeComponent();
-                Loaded += (s, e) => { _loading = true; LoadState(); _loading = false; };
-                Loaded += (s, e) => { _hwinfoTimer?.Start(); };
-                // ponytail: dispatcher timer 必须在 Unloaded 停止，否则页面被导航离开后
-                // timer 仍每 2s 触发 UpdateHWiNFOReadStatus()（注册表读 + WMI 探测），
-                // 而 OtherPage 已脱离可视树，调用对分离元素无效且占 UI 线程。
-                Unloaded += (s, e) => { _hwinfoTimer?.Stop(); };
+            // ponytail: 合并成一个命名方法 —— 原先两个 `Loaded += lambda` 既退订不了,
+            // 也让"初始化 + 启 timer"分散在两处;命名方法便于 Unloaded 对称停止。
+            Loaded += OtherPage_Loaded;
+            Unloaded += OtherPage_Unloaded;
             _hwinfoTimer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
-            _hwinfoTimer.Tick += (s, e) => {
-                // ponytail: 主窗口关闭到托盘后,OtherPage 即使被缓存仍在每 2s 跑一次
-                // UpdateHWiNFOReadStatus (注册表读 + WMI 探测);可见性恢复前是纯开销。
-                // 更稳健的根治见 DashboardPage 同款 guard;此处就近停 timer (Unloaded 也停)。
-                if (Window.GetWindow(this)?.IsVisible != true) { _hwinfoTimer?.Stop(); return; }
-                UpdateHWiNFOReadStatus();
-            };
+            _hwinfoTimer.Tick += OnHwinfoTick;
+        }
+
+        void OtherPage_Loaded(object s, RoutedEventArgs e) {
+            _loading = true;
+            LoadState();
+            _loading = false;
+            _hwinfoTimer?.Start();
+        }
+
+        // ponytail: dispatcher timer 必须在 Unloaded 停止，否则页面被导航离开后
+        // timer 仍每 2s 触发 UpdateHWiNFOReadStatus()（注册表读 + WMI 探测），
+        // 而 OtherPage 已脱离可视树，调用对分离元素无效且占 UI 线程。
+        // 注意: 不能在这里退订 Loaded —— 页面被 CachedPageService 复用时要靠它重新初始化。
+        void OtherPage_Unloaded(object s, RoutedEventArgs e) {
+            _hwinfoTimer?.Stop();
+        }
+
+        void OnHwinfoTick(object s, EventArgs e) {
+            // ponytail: 主窗口关闭到托盘后,OtherPage 即使被缓存仍在每 2s 跑一次
+            // UpdateHWiNFOReadStatus (注册表读 + WMI 探测);可见性恢复前是纯开销。
+            // 与 DashboardPage 同款守卫:只 return 不 Stop —— Stop 之后依赖 Loaded 重启,
+            // 页面被缓存复用而 Loaded 未再触发时就会永久停更。
+            if (Window.GetWindow(this)?.IsVisible != true) return;
+            UpdateHWiNFOReadStatus();
         }
 
         void LoadState()
         {
             NumLockToggle.IsChecked = false;
             CapsLockToggle.IsChecked = false;
-            TouchpadLockToggle.IsChecked = false;
+            // ponytail: 触摸板禁用是 DICS_FLAG_GLOBAL,跨重启保持 —— 必须回显真实设备状态,
+            // 否则重启后 UI 显示"未锁"而触摸板其实还是禁用的,用户无从恢复。
+            TouchpadLockToggle.IsChecked = TouchpadLockService.IsLocked();
             // ponytail: 启动时查 EC 锁状态同步 UI(HP 机型走 WMI 0x2000B),
             // 避免上次锁了重启后 UI 显示关但实际 EC 还锁着。查不到则默认关。
             WinLockToggle.IsChecked = WinKeyLockService.SyncFromEc() ?? false;
@@ -50,6 +68,7 @@ namespace OmenSuperHub.Pages
             HWiNFOReadToggle.IsChecked = ConfigService.HWiNFOReadEnabled;
             UpdateHWiNFOReadStatus();
             HttpApiToggle.IsChecked = ConfigService.HttpApiEnabled;
+            LanAccessToggle.IsChecked = ConfigService.LanAccessEnabled;
             UpdateHttpApiStatus();
         }
 
@@ -68,19 +87,36 @@ namespace OmenSuperHub.Pages
         void TouchpadLockToggle_Changed(object sender, RoutedEventArgs e)
         {
             if (_loading) return;
-            // ponytail: 用 SetupAPI 禁用/启用触摸板设备。
-            // 之前用 PrecisionTouchPad 注册表键 + WM_SETTINGCHANGE 广播，
-            // 但 Windows Shell 不会立即重读该键（需注销重登或重启 explorer.exe）。
-            // SetupAPI 禁用设备即时生效，对所有触摸板类型通用。
-            try
-            {
-                int changed = TouchpadLockService.SetEnabled(TouchpadLockToggle.IsChecked != true);
-                System.Diagnostics.Debug.WriteLine($"Touchpad lock: {changed} devices affected");
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine("Touchpad lock failed: " + ex.Message);
-            }
+            // ponytail: 走 SetupAPI 禁用/启用设备节点(DICS_FLAG_GLOBAL,跨重启保持)。
+            // 设备状态切换是同步 PnP 操作(几十到几百 ms),放后台线程避免卡 UI;
+            // 完成后用 IsLocked() 回查真实状态 —— 驱动拒绝时能如实回滚并提示,
+            // 而不是像旧版那样静默失败(旧版还因 DIGCF_ALLCLASSES 常量写错从未生效过)。
+            bool wantLocked = TouchpadLockToggle.IsChecked == true;
+            TouchpadLockToggle.IsEnabled = false;
+            Task.Run(() => {
+                string err = null;
+                int changed = 0;
+                try { changed = TouchpadLockService.SetEnabled(!wantLocked); }
+                catch (Exception ex) { err = ex.Message; }
+                bool actualLocked = false;
+                try { actualLocked = TouchpadLockService.IsLocked(); }
+                catch { }
+                if (err == null && actualLocked != wantLocked)
+                    Logger.Warn($"[TouchpadLock] want={wantLocked} actual={actualLocked} changed={changed}");
+                Dispatcher.BeginInvoke(new Action(() => {
+                    TouchpadLockToggle.IsEnabled = true;
+                    if (actualLocked == wantLocked) return;
+                    // 回滚 IsChecked 也会触发本 handler,_loading 抑制再入
+                    _loading = true;
+                    try { TouchpadLockToggle.IsChecked = actualLocked; }
+                    finally { _loading = false; }
+                    if (err != null) DialogHelper.Warn(Strings.TouchpadLockFailed + "\n" + err);
+                    // changed==0 且状态没变 = 没匹配到触摸板节点(名称/类不符),与"驱动拒绝
+                    // 改状态"是两回事 —— 分开提示才好定位。
+                    else if (changed == 0) DialogHelper.Warn(Strings.TouchpadLockNoDevice);
+                    else DialogHelper.Warn(Strings.TouchpadLockFailed);
+                }));
+            });
         }
 
         void WinLockToggle_Changed(object sender, RoutedEventArgs e)
@@ -141,12 +177,38 @@ namespace OmenSuperHub.Pages
             }
         }
 
+        void LanAccessToggle_Changed(object sender, RoutedEventArgs e)
+        {
+            if (_loading) return;
+            ConfigService.LanAccessEnabled = LanAccessToggle.IsChecked == true;
+            ConfigService.Save("LanAccessEnabled");
+            // ponytail: 绑定前缀在 Start 时确定,切换必须重启监听才生效(含防火墙规则增删)。
+            if (HardwareApiService.IsRunning)
+            {
+                System.Threading.ThreadPool.QueueUserWorkItem(_ =>
+                {
+                    HardwareApiService.Stop();
+                    HardwareApiService.Start();
+                    Dispatcher.BeginInvoke(new Action(UpdateHttpApiStatus));
+                });
+            }
+        }
+
+        void LanShareButton_Click(object sender, RoutedEventArgs e)
+        {
+            var win = new OmenSuperHub.Views.LanShareWindow { Owner = Window.GetWindow(this) };
+            win.ShowDialog();
+        }
+
         void UpdateHttpApiStatus()
         {
             if (HttpApiStatusText == null) return;
+            // ponytail: LAN 开关只在 API 运行时可切换 —— API 关时绑定前缀无意义。
+            if (LanAccessToggle != null) LanAccessToggle.IsEnabled = HardwareApiService.IsRunning;
             if (HardwareApiService.IsRunning)
             {
-                HttpApiStatusText.Text = Strings.HttpApiRunning;
+                // ponytail: 展示 Bearer 令牌 —— 客户端唯一的获取入口,选中即可复制
+                HttpApiStatusText.Text = Strings.HttpApiRunningWithToken(HardwareApiService.ApiToken);
                 HttpApiStatusText.Foreground = System.Windows.Media.Brushes.LimeGreen;
             }
             else

@@ -1,0 +1,48 @@
+<ui:FluentWindow x:Class="OmenSuperHub.Views.OsdKindsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        xmlns:app="clr-namespace:OmenSuperHub"
+        Title="{x:Static app:Strings.OsdKindsWindowTitle}" Width="460" SizeToContent="Height"
+        MinWidth="400" ResizeMode="NoResize" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner" Topmost="True"
+        WindowBackdropType="Mica" ExtendsContentIntoTitleBar="True" Background="Transparent">
+
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+
+    <!-- ponytail: ExtendsContentIntoTitleBar 去掉原生标题栏,必须显式给 ui:TitleBar 才有关闭键 -->
+    <ui:TitleBar Style="{StaticResource OmenDialogTitleBar}" Grid.Row="0" Title="{x:Static app:Strings.OsdKindsWindowTitle}"
+                 ShowMinimize="False" ShowMaximize="False" ShowClose="True" CanMaximize="False">
+      <ui:TitleBar.Header>
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" IsHitTestVisible="False">
+          <ui:SymbolIcon Symbol="CommentNote24" FontSize="{DynamicResource FontSizeSubheader}"
+                         Foreground="{DynamicResource AccentOmenBrush}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+          <TextBlock Text="{x:Static app:Strings.OsdKindsWindowTitle}" FontSize="{DynamicResource FontSizeTitle}"
+                     FontWeight="SemiBold" VerticalAlignment="Center"/>
+        </StackPanel>
+      </ui:TitleBar.Header>
+    </ui:TitleBar>
+
+    <StackPanel Grid.Row="1" Margin="16,16,16,16" TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
+      <TextBlock Text="{x:Static app:Strings.OsdKindsHint}" FontSize="{DynamicResource FontSizeCaption}"
+                 Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,0,0,14"/>
+
+      <!-- 行由 code-behind 按类型表生成(8 行结构完全一致,写 8 遍 XAML 只是复制粘贴)。
+           ponytail: 换成卡片行后总高 ~640 DIP,150% 缩放的小屏工作区只有 ~485 DIP ——
+           必须限高可滚,否则底部的「全部开启/关闭」被推出屏幕外。 -->
+      <ScrollViewer MaxHeight="440" VerticalScrollBarVisibility="Auto"
+                    HorizontalScrollBarVisibility="Disabled" Padding="0,0,4,0">
+        <StackPanel x:Name="RowsPanel"/>
+      </ScrollViewer>
+
+      <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+        <ui:Button Content="{x:Static app:Strings.OsdKindsAllOn}" Click="AllOn_Click" Margin="0,0,8,0"/>
+        <ui:Button Content="{x:Static app:Strings.OsdKindsAllOff}" Click="AllOff_Click"/>
+      </StackPanel>
+    </StackPanel>
+  </Grid>
+</ui:FluentWindow>

@@ -1,12 +1,12 @@
-﻿<Page x:Class="OmenSuperHub.Pages.FanPage"
+<Page x:Class="OmenSuperHub.Pages.FanPage"
       xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
       xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:app="clr-namespace:OmenSuperHub"
       Title="{x:Static app:Strings.PageFan}">
-<ScrollViewer VerticalScrollBarVisibility="Auto">
-    <StackPanel Margin="24,20" TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
-      <TextBlock x:Name="HeadingFan" Text="{x:Static app:Strings.FanControl}" FontSize="22" FontWeight="Bold" Margin="0,0,0,16"/>
+<ScrollViewer Style="{DynamicResource OmenScrollViewer}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="{DynamicResource PageMargin}" TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
+      <TextBlock x:Name="HeadingFan" Text="{x:Static app:Strings.FanControl}" FontSize="{DynamicResource FontSizePageTitle}" FontWeight="Medium" Margin="0,0,0,16"/>
 
       <!-- ponytail: same DockPanel source as PerfPage — shares the global PresetManager / ConfigService.Preset. -->
       <DockPanel Margin="0,0,0,12">
@@ -25,81 +25,109 @@
                 <ColumnDefinition Width="Auto"/>
               </Grid.ColumnDefinitions>
               <StackPanel Orientation="Horizontal">
-                <ui:SymbolIcon Symbol="ArrowSync24" Margin="0,0,8,0"/>
-                <TextBlock Text="{x:Static app:Strings.FanConfigHeading}" Tag="FanConfig" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" VerticalAlignment="Center"/>
+                <ui:SymbolIcon Symbol="ArrowSync24" Margin="0,0,8,0" FontSize="{DynamicResource FontSizeHeader}"/>
+ <TextBlock Text="{x:Static app:Strings.FanConfigHeading}" Tag="FanConfig" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
               </StackPanel>
               <ComboBox x:Name="FanModeCombo" Grid.Column="1" MinWidth="140"
                         SelectionChanged="FanMode_SelectionChanged">
-                <ComboBoxItem Content="{x:Static app:Strings.FanSilentMode}"/>
-                <ComboBoxItem Content="{x:Static app:Strings.FanCoolMode}"/>
-                <ComboBoxItem Content="{x:Static app:Strings.FanModeDefault}"/>
-                <ComboBoxItem Content="{x:Static app:Strings.FanCustomCurve}"/>
-                <ComboBoxItem Content="{x:Static app:Strings.FanManualMode}"/>
+                <!-- ponytail: 每项带 Tag —— 顺序可自由调整,逻辑一律按 Tag 判档,不再依赖 SelectedIndex
+                     (原先 13 处硬编码索引,挪一行就会把「平衡」写成「降温」)。 -->
+                <ComboBoxItem Content="{x:Static app:Strings.FanSilentMode}" Tag="silent"/>
+                <ComboBoxItem Content="{x:Static app:Strings.FanModeDefault}" Tag="balanced"/>
+                <ComboBoxItem Content="{x:Static app:Strings.FanCoolMode}" Tag="cool"/>
+                <ComboBoxItem Content="{x:Static app:Strings.FanCustomCurve}" Tag="custom"/>
+                <ComboBoxItem Content="{x:Static app:Strings.FanManualMode}" Tag="manual"/>
               </ComboBox>
             </Grid>
           </StackPanel>
         </ui:CardControl.Header>
       </ui:CardControl>
 
-      <ui:CardExpander x:Name="ManualControlCard" Margin="{StaticResource CardMargin}" Visibility="Collapsed"
-                        Icon="ArrowSync24">
+      <ui:CardExpander x:Name="ManualControlCard" Margin="{StaticResource CardMargin}" Visibility="Collapsed">
         <ui:CardExpander.Header>
+          <!-- ponytail: 原 header 里还有一个 FanRpmCombo(1500..6000 十档下拉),与下面的
+               NumberBox+Slider 控制同一个值,三条同步路径各写一遍保存逻辑。下拉已删:
+               连续 500–6000 区间里选 10 个固定档本来就不如滑杆,NumberBox 还能直接输值。 -->
+          <TextBlock Text="{x:Static app:Strings.FanSpeedRPM}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+        </ui:CardExpander.Header>
+        <!-- ponytail: 第三扇(仅三扇机型可见) —— 第 3 扇由固件按 (CPU+GPU)/2 均值跟随,
+             无独立曲线;此行只读展示其当前 level×100 换算转速。 -->
+        <StackPanel>
           <Grid>
             <Grid.ColumnDefinitions>
+              <ColumnDefinition Width="150"/>
               <ColumnDefinition Width="*"/>
-              <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
-            <TextBlock Text="{x:Static app:Strings.FanSpeedRPM}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-            <ComboBox Grid.Column="1" x:Name="FanRpmCombo" MinWidth="100" VerticalAlignment="Top" Margin="0,0,12,0"
-                      SelectionChanged="FanRpmCombo_SelectionChanged"/>
+            <ui:NumberBox x:Name="FanRpmNum" Minimum="500" Maximum="6000" SmallChange="100"
+                          MaxDecimalPlaces="0" ValueChanged="FanRpmNum_ValueChanged"
+                          Value="{Binding ElementName=FanRpmSlider, Path=Value, Mode=TwoWay}"/>
+            <Slider x:Name="FanRpmSlider" Grid.Column="1" Minimum="500" Maximum="6000"
+                    TickFrequency="100" IsSnapToTickEnabled="True" Margin="12,0,0,0"
+                    VerticalAlignment="Center"/>
           </Grid>
-        </ui:CardExpander.Header>
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="150"/>
-            <ColumnDefinition Width="*"/>
-          </Grid.ColumnDefinitions>
-          <ui:NumberBox x:Name="FanRpmNum" Minimum="500" Maximum="6000" SmallChange="100"
-                        MaxDecimalPlaces="0" ValueChanged="FanRpmNum_ValueChanged"
-                        Value="{Binding ElementName=FanRpmSlider, Path=Value, Mode=TwoWay}"/>
-          <Slider x:Name="FanRpmSlider" Grid.Column="1" Minimum="500" Maximum="6000"
-                  TickFrequency="100" IsSnapToTickEnabled="True" Margin="12,0,0,0"
-                  VerticalAlignment="Center"/>
-        </Grid>
+          <TextBlock x:Name="Fan3RpmText" Text="" FontSize="{DynamicResource FontSizeCaption}"
+                     Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,8,0,0"
+                     Visibility="Collapsed"/>
+        </StackPanel>
       </ui:CardExpander>
 
 
-      <ui:CardControl x:Name="FanCurveCard" Margin="{StaticResource CardMargin}" Visibility="Collapsed">
-        <ui:CardControl.Header>
+      <!-- ponytail: 原先是 ui:CardControl,260px 高的交互画布整个塞在 Header 里 ——
+           header 应当只有「标题 + Accessory」,否则卡片 hover/点击语义会盖到画布上。
+           改成 CardExpander:header 只留标题/通道/应用,画布作为正文。 -->
+      <ui:CardExpander x:Name="FanCurveCard" Margin="{StaticResource CardMargin}" Visibility="Collapsed" IsExpanded="True">
+        <ui:CardExpander.Header>
           <StackPanel>
             <Grid>
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
+                <ColumnDefinition Width="Auto"/>
               </Grid.ColumnDefinitions>
               <StackPanel Orientation="Horizontal">
-                <ui:SymbolIcon Symbol="Edit24" Margin="0,0,8,0"/>
-                <TextBlock Text="{x:Static app:Strings.FanCurveHeading}" Tag="SelfDefineCurve" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" VerticalAlignment="Center"/>
+                <ui:SymbolIcon Symbol="Edit24" Margin="0,0,8,0" FontSize="{DynamicResource FontSizeHeader}"/>
+ <TextBlock Text="{x:Static app:Strings.FanCurveHeading}" Tag="SelfDefineCurve" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
               </StackPanel>
-              <ComboBox x:Name="FanCurveSel" Grid.Column="1" MinWidth="120"
+              <ComboBox x:Name="FanCurveSel" Grid.Column="1" MinWidth="120" Margin="0,0,8,0"
                         SelectedIndex="0" SelectionChanged="FanCurveSel_Changed">
-                <ComboBoxItem Content="{x:Static app:Strings.FanCurveCPULabel}"/>
-                <ComboBoxItem Content="{x:Static app:Strings.FanCurveGPULabel}"/>
+                <!-- ponytail: Tag 驱动 —— 第三项 Visibility 由代码动态切换(仅三扇机),索引会漂,
+                     逻辑一律按 Tag 判通道。 -->
+                <ComboBoxItem Content="{x:Static app:Strings.FanCurveCPULabel}" Tag="cpu"/>
+                <ComboBoxItem Content="{x:Static app:Strings.FanCurveGPULabel}" Tag="gpu"/>
+                <!-- ponytail: 第三扇独立曲线 tab —— 仅三扇机型在代码里置 Visible(本机双扇保持 Collapsed) -->
+                <ComboBoxItem Content="{x:Static app:Strings.FanCurveFan3Label}" Tag="fan3" Visibility="Collapsed"/>
               </ComboBox>
+              <!-- ponytail: 立即应用 —— smart 模式的 EMA/迟滞会锁住旧转速(温度未变时)，
+                   新曲线保存后需重置智能状态并立即触发一拍心跳才能生效。
+                   有未保存改动时文案变「应用*」,配合下方提示行 —— 原先编辑与已保存完全无法区分。 -->
+              <ui:Button x:Name="FanCurveApplyBtn" Grid.Column="2" Content="{x:Static app:Strings.FanCurveApplyBtn}"
+                         Height="30" MinWidth="64" Click="FanCurveApply_Click" Appearance="Primary"/>
             </Grid>
-            <StackPanel Margin="0,12,0,12">
+          </StackPanel>
+        </ui:CardExpander.Header>
+        <!-- 正文:说明 + 曲线画布 + 精确输入 + 导入导出。
+             ponytail: 必须用 Grid 而不是 StackPanel —— 纵向 StackPanel 测量子元素时给无限宽,
+             里面的画布会挣脱卡片宽度一路撑到屏幕外(实测溢出 ~350px)。 -->
+        <Grid Margin="0,8,0,0">
+          <Grid.RowDefinitions>
+            <RowDefinition Height="Auto"/>
+            <RowDefinition Height="Auto"/>
+          </Grid.RowDefinitions>
+            <StackPanel Grid.Row="0" Margin="0,0,0,12">
               <TextBlock x:Name="FanCurveTipText" Text="{x:Static app:Strings.FanCurveTip}" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"/>
 	              <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" Text="{x:Static app:Strings.FanDragHint}"/>
-		              <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="0,4,0,0"
-		                         Text="{x:Static app:Strings.FanModeChangeHint}"/>
-            </StackPanel>
-               <Grid>
+	              <TextBlock x:Name="FanCurveDirtyText" Visibility="Collapsed" Margin="0,2,0,0"
+	                         FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource AccentOmenBrush}"
+	                         Text="{x:Static app:Strings.FanCurveDirtyHint}"/>
+	            </StackPanel>
+               <Grid Grid.Row="1">
                  <Grid.ColumnDefinitions>
                    <ColumnDefinition Width="45"/>
                    <ColumnDefinition Width="*"/>
                  </Grid.ColumnDefinitions>
                  <Grid.RowDefinitions>
                    <RowDefinition Height="*"/>
+                   <RowDefinition Height="Auto"/>
                    <RowDefinition Height="Auto"/>
                    <RowDefinition Height="Auto"/>
                  </Grid.RowDefinitions>
@@ -114,8 +142,41 @@
                            MouseRightButtonDown="FanCurveCanvas_MouseRightButtonDown"/>
                  </Border>
                  <TextBlock Grid.Row="1" Grid.Column="1" x:Name="CurveAxisLabel" Text="{x:Static app:Strings.TempCelsius}" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center" Margin="0,0,10,0"/>
-                 <!-- Import / Export / Share buttons -->
-                 <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,12,0,0" HorizontalAlignment="Center">
+                 <!-- ponytail: 选中点精确输入 —— 拖拽只能到 1°C / 100 RPM 的近似值,也没有键盘路径。
+                      未选中点时显示提示文案,选中后显示两个 NumberBox + 设置。 -->
+                 <Grid Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Margin="0,10,0,0">
+                   <Grid.ColumnDefinitions>
+                     <ColumnDefinition Width="Auto"/>
+                     <ColumnDefinition Width="Auto"/>
+                     <ColumnDefinition Width="Auto"/>
+                     <ColumnDefinition Width="Auto"/>
+                     <ColumnDefinition Width="Auto"/>
+                     <ColumnDefinition Width="*"/>
+                   </Grid.ColumnDefinitions>
+                   <TextBlock x:Name="CurvePointHintText" Grid.Column="0" VerticalAlignment="Center"
+                              Text="{x:Static app:Strings.FanCurvePointNone}"
+                              FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"/>
+                   <StackPanel x:Name="CurvePointEditor" Grid.Column="0" Grid.ColumnSpan="5"
+                               Orientation="Horizontal" Visibility="Collapsed">
+                     <TextBlock Text="{x:Static app:Strings.FanCurvePointHint}" VerticalAlignment="Center"
+                                FontSize="{DynamicResource FontSizeCaption}" Margin="0,0,8,0"/>
+                     <TextBlock Text="{x:Static app:Strings.FanCurvePointTemp}" VerticalAlignment="Center"
+                                FontSize="{DynamicResource FontSizeCaption}" Margin="0,0,6,0"/>
+                     <ui:NumberBox x:Name="CurvePointTempNum" Width="72" Minimum="20" Maximum="105"
+                                   SmallChange="1" MaxDecimalPlaces="0" VerticalAlignment="Center"/>
+                     <TextBlock Text="°C" VerticalAlignment="Center" FontSize="{DynamicResource FontSizeCaption}" Margin="4,0,12,0"/>
+                     <TextBlock Text="{x:Static app:Strings.FanCurvePointRpm}" VerticalAlignment="Center"
+                                FontSize="{DynamicResource FontSizeCaption}" Margin="0,0,6,0"/>
+                     <ui:NumberBox x:Name="CurvePointRpmNum" Width="90" Minimum="500" Maximum="6400"
+                                   SmallChange="100" MaxDecimalPlaces="0" VerticalAlignment="Center"/>
+                     <TextBlock Text="RPM" VerticalAlignment="Center" FontSize="{DynamicResource FontSizeCaption}" Margin="4,0,10,0"/>
+                     <ui:Button x:Name="CurvePointApplyBtn" Content="{x:Static app:Strings.FanCurvePointApply}"
+                                Height="28" MinWidth="56" Padding="10,0" Appearance="Secondary"
+                                Click="CurvePointApply_Click"/>
+                   </StackPanel>
+                 </Grid>
+                 <!-- Import / Export / Share / Reset buttons -->
+                 <StackPanel Grid.Row="3" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Margin="0,10,0,0" HorizontalAlignment="Center">
                    <ui:Button x:Name="FanImportBtn" Content="{x:Static app:Strings.FanCurveImport}" Width="84" Height="32" FontSize="{DynamicResource FontSizeBody}"
                               Click="FanImportBtn_Click" Appearance="Secondary"
 		                              ToolTip="{x:Static app:Strings.FanImportTooltip}"/>
@@ -125,11 +186,15 @@
 		                   <ui:Button x:Name="FanShareBtn" Content="{x:Static app:Strings.FanCurveShare}" Width="84" Height="32" FontSize="{DynamicResource FontSizeBody}" Margin="8,0,0,0"
 		                              Click="FanShareBtn_Click" Appearance="Secondary"
 		                              ToolTip="{x:Static app:Strings.FanShareTooltip}"/>
+		                   <!-- ponytail: 恢复默认 —— FanService.GetDefaultPresetCurve 早就有了,只是没接前端;
+		                        曲线拖坏后原先只能手拖回来或删预设文件。 -->
+		                   <ui:Button x:Name="FanResetBtn" Content="{x:Static app:Strings.FanCurveReset}" Width="84" Height="32" FontSize="{DynamicResource FontSizeBody}" Margin="8,0,0,0"
+		                              Click="FanResetBtn_Click" Appearance="Secondary"
+		                              ToolTip="{x:Static app:Strings.FanCurveReset}"/>
                  </StackPanel>
                </Grid>
-           </StackPanel>
-         </ui:CardControl.Header>
-       </ui:CardControl>
+        </Grid>
+       </ui:CardExpander>
 
        <ui:CardControl x:Name="SmartFanCard" Margin="{StaticResource CardMargin}" Visibility="Collapsed">
          <ui:CardControl.Header>
@@ -140,8 +205,8 @@
                  <ColumnDefinition Width="Auto"/>
                </Grid.ColumnDefinitions>
                <StackPanel Orientation="Horizontal">
-                 <ui:SymbolIcon Symbol="Bot24" Margin="0,0,8,0"/>
-                 <TextBlock Text="{x:Static app:Strings.FanSmartSettings}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" VerticalAlignment="Center"/>
+                 <ui:SymbolIcon Symbol="Bot24" Margin="0,0,8,0" FontSize="{DynamicResource FontSizeHeader}"/>
+ <TextBlock Text="{x:Static app:Strings.FanSmartSettings}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                </StackPanel>
               </Grid>
               <Grid Margin="0,8,0,0">
@@ -192,7 +257,7 @@
            <StackPanel>
              <StackPanel Orientation="Horizontal" Margin="0,0,0,0">
                <ui:SymbolIcon Symbol="Settings24" FontSize="{DynamicResource FontSizeHeader}" Margin="0,0,8,0"/>
-               <TextBlock Text="{x:Static app:Strings.FanSettings}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+               <TextBlock Text="{x:Static app:Strings.FanSettings}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="{DynamicResource FontSizeTitle}"/>
              </StackPanel>
              <StackPanel x:Name="TempSensCard" Margin="0,8,0,8">
                <Grid>
@@ -223,7 +288,7 @@
                <ui:ToggleSwitch x:Name="AutoFanProtectToggle" Grid.Column="1"
                                Checked="AutoFanProtectToggle_Changed" Unchecked="AutoFanProtectToggle_Changed"/>
              </Grid>
-            <Grid Margin="0,6,0,6">
+            <Grid x:Name="FanSyncPanel" Margin="0,6,0,6">
               <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
@@ -235,6 +300,32 @@
               </StackPanel>
               <ui:ToggleSwitch x:Name="FanSyncToggle" Grid.Column="1"
                               Checked="FanSyncToggle_Changed" Unchecked="FanSyncToggle_Changed"/>
+            </Grid>
+            <Grid x:Name="IrFanCurvePanel" Margin="0,6,0,6">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <StackPanel>
+                <TextBlock Text="{x:Static app:Strings.UseIrForFanCurve}" FontSize="{DynamicResource FontSizeBody}" VerticalAlignment="Center"/>
+                <TextBlock Text="{x:Static app:Strings.UseIrForFanCurveDesc}" FontSize="{DynamicResource FontSizeCaption}"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+              </StackPanel>
+              <ui:ToggleSwitch x:Name="IrFanCurveToggle" Grid.Column="1"
+                              Checked="IrFanCurveToggle_Changed" Unchecked="IrFanCurveToggle_Changed"/>
+            </Grid>
+            <Grid x:Name="SmartIdleLambdaPanel" Margin="0,6,0,6">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <StackPanel>
+                <TextBlock Text="{x:Static app:Strings.FanSmartIdleLambda}" FontSize="{DynamicResource FontSizeBody}" VerticalAlignment="Center"/>
+                <TextBlock Text="{x:Static app:Strings.FanSmartIdleLambdaHint}" FontSize="{DynamicResource FontSizeCaption}"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+              </StackPanel>
+              <ui:ToggleSwitch x:Name="SmartIdleLambdaToggle" Grid.Column="1"
+                              Checked="SmartIdleLambdaToggle_Changed" Unchecked="SmartIdleLambdaToggle_Changed"/>
             </Grid>
             <Grid x:Name="CleanCreekCard" Visibility="Collapsed">
               <Grid.ColumnDefinitions>

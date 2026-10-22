@@ -175,6 +175,20 @@
   <SolidColorBrush x:Key="NavItemBackgroundHover" Color="{StaticResource BgHover}" />
   <SolidColorBrush x:Key="NavItemIndicator" Color="{StaticResource AccentOmen}" />
 
+  <!-- CoreKeep 核心类型标识色 — 本批仅预置定义,后续批次消费(替代 CoreKeepPage 内联 hex) -->
+  <SolidColorBrush x:Key="CoreTypeSmt0Brush" Color="#FF5B6B73" />
+  <SolidColorBrush x:Key="CoreTypeSmt1Brush" Color="#FF8B95A1" />
+
+  <!-- CoreKeep 四级强制级别徽章色(底色 20% alpha + 前景实色)— 替代 XAML DataTrigger 字面量与 code-behind 冻结画刷两份硬编码 -->
+  <SolidColorBrush x:Key="CoreKeepBadgeHintBrush" Color="#330078D4" />
+  <SolidColorBrush x:Key="CoreKeepBadgeHintFgBrush" Color="#FF0078D4" />
+  <SolidColorBrush x:Key="CoreKeepBadgeSoftBrush" Color="#33FFB900" />
+  <SolidColorBrush x:Key="CoreKeepBadgeSoftFgBrush" Color="#FFFFB900" />
+  <SolidColorBrush x:Key="CoreKeepBadgeHardBrush" Color="#33F7630C" />
+  <SolidColorBrush x:Key="CoreKeepBadgeHardFgBrush" Color="#FFF7630C" />
+  <SolidColorBrush x:Key="CoreKeepBadgeLockedBrush" Color="#33E74856" />
+  <SolidColorBrush x:Key="CoreKeepBadgeLockedFgBrush" Color="#FFE74856" />
+
   <!-- ContextMenu / OSD / Tray Popup -->
   <SolidColorBrush x:Key="ContextMenuBackground" Color="{StaticResource BgElevated}" />
   <SolidColorBrush x:Key="ContextMenuBorderBrush" Color="{StaticResource BorderSubtle}" />

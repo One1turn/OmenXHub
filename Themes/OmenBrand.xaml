@@ -1,14 +1,5 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-                    xmlns:sys="clr-namespace:System;assembly=mscorlib">
-
-  <!-- WPF UI Accent Color Mapping → Omen White Accent -->
-  <sys:Double x:Key="SystemAccentColorDark1">4286578542</sys:Double>
-  <sys:Double x:Key="SystemAccentColorDark2">4286578542</sys:Double>
-  <sys:Double x:Key="SystemAccentColorDark3">4286578542</sys:Double>
-  <sys:Double x:Key="SystemAccentColorLight1">4293984240</sys:Double>
-  <sys:Double x:Key="SystemAccentColorLight2">4293984240</sys:Double>
-  <sys:Double x:Key="SystemAccentColorLight3">4293984240</sys:Double>
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
   <!-- Map WPF UI semantic brushes to Omen color scheme -->
   <!-- Background -->
@@ -94,11 +85,11 @@
   <SolidColorBrush x:Key="NavigationViewItemBackgroundPointerOverBrush" Color="{DynamicResource BgHover}"/>
   <SolidColorBrush x:Key="NavigationViewItemBackgroundPressedBrush" Color="{DynamicResource BgHover}"/>
   <SolidColorBrush x:Key="NavigationViewItemBackgroundSelectedBrush" Color="{DynamicResource BgHover}"/>
-  <SolidColorBrush x:Key="NavigationViewItemForegroundBrush" Color="{DynamicResource NavItemForeground}"/>
-  <SolidColorBrush x:Key="NavigationViewItemForegroundPointerOverBrush" Color="{DynamicResource NavItemForegroundActive}"/>
-  <SolidColorBrush x:Key="NavigationViewItemForegroundPressedBrush" Color="{DynamicResource NavItemForegroundActive}"/>
-  <SolidColorBrush x:Key="NavigationViewItemForegroundSelectedBrush" Color="{DynamicResource NavItemForegroundActive}"/>
-  <SolidColorBrush x:Key="NavigationViewItemIndicatorBrush" Color="{DynamicResource NavItemIndicator}"/>
+  <SolidColorBrush x:Key="NavigationViewItemForegroundBrush" Color="{DynamicResource TextSecondary}"/>
+  <SolidColorBrush x:Key="NavigationViewItemForegroundPointerOverBrush" Color="{DynamicResource AccentOmen}"/>
+  <SolidColorBrush x:Key="NavigationViewItemForegroundPressedBrush" Color="{DynamicResource AccentOmen}"/>
+  <SolidColorBrush x:Key="NavigationViewItemForegroundSelectedBrush" Color="{DynamicResource AccentOmen}"/>
+  <SolidColorBrush x:Key="NavigationViewItemIndicatorBrush" Color="{DynamicResource AccentOmen}"/>
   <SolidColorBrush x:Key="NavigationViewItemHeaderForegroundBrush" Color="{DynamicResource TextSecondary}"/>
 
   <!-- Toggle Switch -->

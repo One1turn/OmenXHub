@@ -10,14 +10,8 @@
       <Setter.Value>
         <ControlTemplate TargetType="Slider">
           <Grid VerticalAlignment="Center">
-            <Border Height="4" CornerRadius="2">
-              <Border.Background>
-                <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                  <GradientStop Color="#FF55E1" Offset="0.0"/>
-                  <GradientStop Color="#FF0402" Offset="0.5"/>
-                  <GradientStop Color="#FFB402" Offset="1.0"/>
-                </LinearGradientBrush>
-              </Border.Background>
+            <Border Height="4" CornerRadius="2"
+                    Background="{StaticResource OmenBrandGradient}">
             </Border>
             <Track x:Name="PART_Track">
               <Track.Thumb>

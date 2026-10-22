@@ -25,10 +25,10 @@
     </Style>
   </Page.Resources>
 
-  <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-    <StackPanel Margin="24,16" MinWidth="400" TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
+  <ScrollViewer Style="{DynamicResource OmenScrollViewer}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <StackPanel Margin="{DynamicResource PageMargin}" MinWidth="400" TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
 
-      <TextBlock Text="{x:Static app:Strings.DashboardHeading}" FontSize="22" FontWeight="Bold" Margin="0,0,0,16"/>
+      <TextBlock Text="{x:Static app:Strings.DashboardHeading}" FontSize="{DynamicResource FontSizePageTitle}" FontWeight="Medium" Margin="0,0,0,16"/>
 
       <Grid x:Name="MetricsGrid" Margin="0,0,0,12">
         <Grid.ColumnDefinitions>
@@ -58,8 +58,8 @@
                   <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
-                  <ui:SymbolIcon Symbol="DeveloperBoard24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                  <TextBlock Text="{x:Static app:Strings.MonitorCpuLabel}" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeSubtitle}" VerticalAlignment="Center"/>
+                  <ui:SymbolIcon Symbol="DeveloperBoard24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                  <TextBlock Text="{x:Static app:Strings.MonitorCpuLabel}" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeTitle}" VerticalAlignment="Center"/>
                 </StackPanel>
                 <Path x:Name="CpuBrandLogo" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Top"
                       Width="40" Height="40" Margin="0,4,4,0" Opacity="0.06" Stretch="Uniform"
@@ -166,8 +166,8 @@
                   <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
-                  <ui:SymbolIcon Symbol="DeviceEq24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                  <TextBlock Text="{x:Static app:Strings.MonitorGpuLabel}" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeSubtitle}" VerticalAlignment="Center"/>
+                  <ui:SymbolIcon Symbol="DeviceEq24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                  <TextBlock Text="{x:Static app:Strings.MonitorGpuLabel}" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeTitle}" VerticalAlignment="Center"/>
                 </StackPanel>
                 <Path x:Name="GpuBrandLogo" Grid.Column="2" HorizontalAlignment="Right" VerticalAlignment="Top"
                       Width="40" Height="40" Margin="0,4,4,0" Opacity="0.06" Stretch="Uniform"
@@ -276,57 +276,74 @@
                   <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
-                  <ui:SymbolIcon Symbol="Ram20" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                  <TextBlock Text="{x:Static app:Strings.DashboardMemoryLabel}" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeSubtitle}" VerticalAlignment="Center"/>
+                  <ui:SymbolIcon Symbol="Ram20" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                  <TextBlock Text="{x:Static app:Strings.DashboardMemoryLabel}" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeTitle}" VerticalAlignment="Center"/>
                 </StackPanel>
               </Grid>
+              <!-- ponytail: 与储存卡同构 —— 内容行 = [可视化居中] + [操作按钮右缘]。
+                   两卡的操作按钮因此落在同一水平/同一右缘,视觉成对。
+                   圆环组仍整体居中,不再把按钮拉成孤立的一块。 -->
               <Grid Grid.Row="1" Margin="0,8,0,0">
                 <Grid.ColumnDefinitions>
-                  <ColumnDefinition Width="Auto"/>
                   <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
-                <!-- ponytail: 运存圆环 — 复用 DrawRing 的 ArcSegment 几何,
-                     中心显示利用率百分比。与系统状态圆环同款几何,side=112。 -->
-                <Grid Width="112" Height="112" VerticalAlignment="Center" HorizontalAlignment="Left">
-                  <Path x:Name="MemRingTrack" Stroke="{DynamicResource ControlFillSecondaryBrush}" StrokeThickness="9"/>
-                  <Path x:Name="MemRingArc" Stroke="{DynamicResource AccentOmenBrush}" StrokeThickness="9"
-                        StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
-                  <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
-                    <TextBlock x:Name="MemRingPctText" Text="-" FontSize="22" FontWeight="Bold"
-                               Foreground="{DynamicResource TextPrimaryBrush}" HorizontalAlignment="Center"/>
-                    <TextBlock Text="{x:Static app:Strings.UtilizationLabel}" FontSize="10"
-                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" HorizontalAlignment="Center"/>
-                  </StackPanel>
-                </Grid>
-                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="16,0,0,0">
-                  <Grid Margin="0,0,0,6">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="48"/>
-                      <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="{x:Static app:Strings.DashboardMemoryUsedLabel}" FontSize="{DynamicResource FontSizeCaption}"
-                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Column="1" x:Name="RamDetailText" Text="-" FontSize="{DynamicResource FontSizeCaption}"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" Margin="8,0,0,0"/>
-                  </Grid>
-                  <Grid Margin="0,0,0,4">
-                    <Grid.ColumnDefinitions>
-                      <ColumnDefinition Width="48"/>
-                      <ColumnDefinition Width="*"/>
-                    </Grid.ColumnDefinitions>
-                    <TextBlock Text="{x:Static app:Strings.DashboardMemoryVirtualLabel}" FontSize="{DynamicResource FontSizeCaption}"
-                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" VerticalAlignment="Center"/>
-                    <TextBlock Grid.Column="1" x:Name="RamVirtualText" Text="-" FontSize="{DynamicResource FontSizeCaption}"
-                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center" Margin="8,0,0,0"/>
-                  </Grid>
-                  <Button x:Name="CleanMemBtn" MinHeight="26" Padding="10,2" FontSize="{DynamicResource FontSizeCaption}"
-                          HorizontalAlignment="Left" Margin="0,4,0,0" Click="CleanMemory_Click">
-                    <StackPanel Orientation="Horizontal">
-                      <ui:SymbolIcon Symbol="Broom24" FontSize="{DynamicResource FontSizeSubtitle}" Margin="0,0,4,0"/>
-                      <TextBlock Text="{x:Static app:Strings.DashboardMemoryCleanBtn}" VerticalAlignment="Center"/>
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Center">
+                  <!-- 物理内存环 -->
+                  <Grid Width="112" Height="112" VerticalAlignment="Center">
+                    <Path x:Name="MemRingTrack" Stroke="{DynamicResource ControlFillSecondaryBrush}" StrokeThickness="9"/>
+                    <Path x:Name="MemRingArc" Stroke="{DynamicResource AccentOmenBrush}" StrokeThickness="9"
+                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                      <TextBlock x:Name="MemRingPctText" Text="-" FontSize="22" FontWeight="Bold"
+                                 Foreground="{DynamicResource TextPrimaryBrush}" HorizontalAlignment="Center"/>
+                      <TextBlock Text="{x:Static app:Strings.UtilizationLabel}" FontSize="{DynamicResource FontSizeCaption}"
+                                 Foreground="{DynamicResource TextFillColorTertiaryBrush}" HorizontalAlignment="Center"/>
                     </StackPanel>
-                  </Button>
+                  </Grid>
+                  <!-- 虚拟内存环:同款几何,缩小到 84 并弱化(细描边/次级字色),主次分明 -->
+                  <Grid Width="84" Height="84" VerticalAlignment="Center" Margin="14,0,0,0">
+                    <Path x:Name="MemVirtRingTrack" Stroke="{DynamicResource ControlFillSecondaryBrush}" StrokeThickness="7"/>
+                    <Path x:Name="MemVirtRingArc" Stroke="{DynamicResource AccentOmenBrush}" StrokeThickness="7"
+                          StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
+                    <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
+                      <TextBlock x:Name="MemVirtPctText" Text="-" FontSize="15" FontWeight="SemiBold"
+                                 Foreground="{DynamicResource TextFillColorSecondaryBrush}" HorizontalAlignment="Center"/>
+                      <TextBlock Text="{x:Static app:Strings.DashboardMemoryVirtualLabel}" FontSize="10"
+                                 Foreground="{DynamicResource TextFillColorTertiaryBrush}" HorizontalAlignment="Center"/>
+                    </StackPanel>
+                  </Grid>
+                  <!-- 数据:标签列/数值列共用列定义,两行数值左缘对齐 -->
+                  <Grid VerticalAlignment="Center" Margin="20,0,0,0">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto"/>
+                      <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                      <RowDefinition Height="Auto"/>
+                      <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    <TextBlock Text="{x:Static app:Strings.DashboardMemoryUsedLabel}" FontSize="{DynamicResource FontSizeCaption}"
+                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" VerticalAlignment="Center"
+                               Margin="0,0,0,6"/>
+                    <TextBlock Grid.Column="1" x:Name="RamDetailText" Text="-" FontSize="{DynamicResource FontSizeCaption}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"
+                               Margin="10,0,0,6"/>
+                    <TextBlock Grid.Row="1" Text="{x:Static app:Strings.DashboardMemoryVirtualLabel}" FontSize="{DynamicResource FontSizeCaption}"
+                               Foreground="{DynamicResource TextFillColorTertiaryBrush}" VerticalAlignment="Center"/>
+                    <TextBlock Grid.Row="1" Grid.Column="1" x:Name="RamVirtualText" Text="-" FontSize="{DynamicResource FontSizeCaption}"
+                               Foreground="{DynamicResource TextFillColorSecondaryBrush}" VerticalAlignment="Center"
+                               Margin="10,0,0,0"/>
+                  </Grid>
                 </StackPanel>
+                <Button x:Name="CleanMemBtn" Grid.Column="1" MinHeight="28" Padding="10,0"
+                        FontSize="{DynamicResource FontSizeCaption}" VerticalAlignment="Center" Margin="16,0,0,0"
+                        Click="CleanMemory_Click">
+                  <StackPanel Orientation="Horizontal">
+                    <ui:SymbolIcon Symbol="Broom24" FontSize="{DynamicResource FontSizeSubtitle}" Margin="0,0,4,0"/>
+                    <TextBlock Text="{x:Static app:Strings.DashboardMemoryCleanBtn}" VerticalAlignment="Center"/>
+                  </StackPanel>
+                </Button>
               </Grid>
             </Grid>
           </ui:CardControl.Header>
@@ -347,23 +364,31 @@
                   <ColumnDefinition Width="Auto"/>
                 </Grid.ColumnDefinitions>
                 <StackPanel VerticalAlignment="Center" Orientation="Horizontal">
-                  <ui:SymbolIcon Symbol="Storage24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,6,0"/>
-                  <TextBlock Text="{x:Static app:Strings.DashboardStorageLabel}" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeSubtitle}" VerticalAlignment="Center"/>
+                  <ui:SymbolIcon Symbol="Storage24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,6,0"/>
+                  <TextBlock Text="{x:Static app:Strings.DashboardStorageLabel}" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeTitle}" VerticalAlignment="Center"/>
                 </StackPanel>
+              </Grid>
+              <!-- ponytail: 与运存卡同构 —— 卡头只留 图标+标题,操作按钮与可视化一起放内容行。
+                   原先「储存清理」挂在卡头右侧、「一键清理」在运存卡内容里,两卡按钮位置不一致。 -->
+              <Grid Grid.Row="1" Margin="0,8,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+                <!-- 储存柱状图 — 每盘一根竖条,高度=已用占比,颜色按占比渐变。
+                     Canvas 横向拉伸,柱位按实际宽度均分居中(见 DrawStorageBars);
+                     计时刷新有 10s 节流。上限:单盘>99% 颜色顶 AccentRed。 -->
+                <Canvas x:Name="StorageBarCanvas" Height="132" VerticalAlignment="Center"
+                        HorizontalAlignment="Stretch" SizeChanged="StorageBarCanvas_SizeChanged"/>
                 <!-- ponytail: 储存清理入口 — 参考 Dism++ 空间回收,弹窗勾选系统垃圾类目 -->
-                <ui:Button Grid.Column="2" Content="{x:Static app:Strings.StorageCleanTitle}"
-                           Height="28" Padding="10,0" HorizontalAlignment="Right"
+                <ui:Button Grid.Column="1" Content="{x:Static app:Strings.StorageCleanTitle}"
+                           Height="28" Padding="10,0" VerticalAlignment="Center" Margin="16,0,0,0"
                            Click="StorageClean_Click">
                   <ui:Button.Icon>
                     <ui:SymbolIcon Symbol="Broom24" FontSize="{DynamicResource FontSizeSubtitle}"/>
                   </ui:Button.Icon>
                 </ui:Button>
               </Grid>
-              <!-- ponytail: 储存柱状图 — 每盘一根竖条,高度=已用占比,颜色按占比渐变。
-                   Canvas 固定 220×132 容纳至多 8 盘(每柱 24px + 4px 间隔);
-                   超过 8 盘降级到文字列表 RefreshStorageLegacy()。上限:单盘>99% 颜色顶 AccentRed。 -->
-              <Canvas x:Name="StorageBarCanvas" Grid.Row="1" Width="220" Height="132"
-                      Margin="0,8,0,0" HorizontalAlignment="Left" VerticalAlignment="Top"/>
             </Grid>
           </ui:CardControl.Header>
         </ui:CardControl>
@@ -381,7 +406,10 @@
           <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <ui:CardControl Grid.Row="0" Grid.Column="0">
+        <!-- ponytail: 与 :265/:336 同款修法 — CardControl 默认 VerticalAlignment=Center,
+             同行两卡内容不等高时矮卡不被拉伸, 顶缘与外框高都不齐(实测 154.3/441.1 vs 146.3/445.1)。
+             Stretch 让行高取两者上限, 一次消掉顶缘差与外框高差。 -->
+        <ui:CardControl Grid.Row="0" Grid.Column="0" VerticalAlignment="Stretch">
           <ui:CardControl.Header>
             <Grid>
               <Grid.ColumnDefinitions>
@@ -389,9 +417,9 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
               </Grid.ColumnDefinitions>
-              <ui:SymbolIcon Symbol="Info24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Top" Margin="0,2,0,0"/>
+              <ui:SymbolIcon Symbol="Info24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Top" Margin="0,2,0,0"/>
               <StackPanel Grid.Column="1" Margin="10,0,0,0">
-                <TextBlock Text="{x:Static app:Strings.SysStatusHeading}" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeSubtitle}" Margin="0,0,0,10"/>
+                <TextBlock Text="{x:Static app:Strings.SysStatusHeading}" FontWeight="SemiBold" FontSize="{DynamicResource FontSizeTitle}" Margin="0,0,0,10"/>
                 <Grid Margin="{StaticResource CardMargin}">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
@@ -412,7 +440,7 @@
                   <TextBlock x:Name="CurrentFanText" Grid.Column="1" Foreground="{DynamicResource AccentOmenBrush}"
                              FontWeight="SemiBold" FontSize="{DynamicResource FontSizeBody}" VerticalAlignment="Center"/>
                 </Grid>
-                <Grid>
+                <Grid Margin="{StaticResource CardMargin}">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*"/>
                     <ColumnDefinition Width="Auto"/>
@@ -422,6 +450,16 @@
                   <TextBlock x:Name="PowerStatusText" Grid.Column="1" Foreground="{DynamicResource AccentGreenBrush}"
                              FontWeight="SemiBold" FontSize="{DynamicResource FontSizeBody}" VerticalAlignment="Center"/>
                 </Grid>
+                <Grid Margin="{StaticResource CardMargin}">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="{x:Static app:Strings.BatteryHealthLabel}" FontSize="{DynamicResource FontSizeBody}" Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                             VerticalAlignment="Center"/>
+                  <TextBlock x:Name="BatteryHealthText" Grid.Column="1" Foreground="{DynamicResource AccentGreenBrush}"
+                             FontWeight="SemiBold" FontSize="{DynamicResource FontSizeBody}" VerticalAlignment="Center" Text="-"/>
+                </Grid>
               </StackPanel>
               <Grid Grid.Column="2" Width="112" Height="112" Margin="14,0,0,0" VerticalAlignment="Center">
                 <Path x:Name="RingTrack" Stroke="{DynamicResource ControlFillSecondaryBrush}" StrokeThickness="9"/>
@@ -429,7 +467,7 @@
                       StrokeStartLineCap="Round" StrokeEndLineCap="Round"/>
                 <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center">
                   <TextBlock x:Name="RingLabelText" Text="{x:Static app:Strings.DashboardTendencyLabel}"
-                             FontSize="10" Foreground="{DynamicResource TextFillColorTertiaryBrush}"
+                             FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextFillColorTertiaryBrush}"
                              HorizontalAlignment="Center"/>
                   <TextBlock x:Name="RingPctText" Text="-" FontSize="20" FontWeight="Bold"
                              Foreground="{DynamicResource TextPrimaryBrush}" HorizontalAlignment="Center"/>
@@ -439,7 +477,7 @@
           </ui:CardControl.Header>
         </ui:CardControl>
 
-        <ui:CardControl Grid.Row="0" Grid.Column="2">
+        <ui:CardControl Grid.Row="0" Grid.Column="2" VerticalAlignment="Stretch">
           <ui:CardControl.Header>
             <Grid>
               <Grid.ColumnDefinitions>
@@ -447,30 +485,33 @@
                 <ColumnDefinition Width="*"/>
                 <ColumnDefinition Width="Auto"/>
               </Grid.ColumnDefinitions>
-              <ui:SymbolIcon Symbol="PresenceAvailable24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Top" Margin="0,2,0,0"/>
-              <StackPanel Grid.Column="1" Margin="10,0,0,0">
+              <ui:SymbolIcon Symbol="PresenceAvailable24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Top" Margin="0,2,0,0"/>
+              <!-- ponytail: 图标和标题保持贴顶原位,只有选择栏在卡片高度内垂直居中 ——
+                   右侧雷达 112 高撑开了卡片,标题下方原本空一大片。 -->
+              <Grid Grid.Column="1" Margin="10,0,0,0">
                 <TextBlock Text="{x:Static app:Strings.SysPresetsHeading}" FontWeight="SemiBold"
-                           FontSize="{DynamicResource FontSizeSubtitle}" Margin="0,0,0,10"/>
-                <Grid>
+                           FontSize="{DynamicResource FontSizeTitle}" VerticalAlignment="Top"/>
+                <Grid VerticalAlignment="Center">
                   <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="Auto"/>
                     <ColumnDefinition Width="*"/>
-                    <ColumnDefinition Width="Auto"/>
-                    <ColumnDefinition Width="Auto"/>
                   </Grid.ColumnDefinitions>
-                  <ComboBox x:Name="PresetCombo" MinWidth="120"
+                  <!-- ponytail: 选择栏落在 * 列里被拉伸到整列宽(实测 356.6px), MinWidth 拦不住。
+                       Left + MaxWidth=120 才是硬上限: 短内容贴左取 120, 长自定义预设名也不回弹。 -->
+                  <ComboBox x:Name="PresetCombo" MinWidth="120" MaxWidth="120" HorizontalAlignment="Left"
                             SelectionChanged="Preset_SelectionChanged"/>
+                  <!-- ponytail: 重命名按钮紧跟选择栏(原在 * 列之后被推到卡片最右,与雷达挤在一起)。
+                       「应用/保存」按钮已删 —— 它调 SaveCustomPreset 把当前状态写回选中的自定义预设,
+                       但点完没有任何可见反馈,且 PerfPage 的「保存」/ FanPage 的曲线自动保存已覆盖同一件事,
+                       留一个"点了没反应"的按钮只会让人以为是坏的。 -->
                   <Button x:Name="PresetRenameBtn" Grid.Column="1" Width="28" Height="28"
-                          Padding="0" Margin="4,0" Click="PresetRename_Click"
+                          Padding="0" Margin="4,0,0,0" Click="PresetRename_Click"
                           ToolTip="{x:Static app:Strings.RenamePreset}" Visibility="Collapsed">
                     <ui:SymbolIcon Symbol="Edit24" FontSize="{DynamicResource FontSizeSubtitle}"/>
                   </Button>
-                  <Button x:Name="PresetSaveBtn" Grid.Column="2" Width="28" Height="28"
-                          Padding="0" Margin="4,0" Click="PresetSave_Click"
-                          ToolTip="{x:Static app:Strings.SaveTooltip}" Visibility="Collapsed">
-                    <ui:SymbolIcon Symbol="Checkmark24" FontSize="{DynamicResource FontSizeSubtitle}"/>
-                  </Button>
                 </Grid>
-              </StackPanel>
+              </Grid>
               <Canvas x:Name="RadarCanvas" Grid.Column="2" Width="112" Height="112"
                       Margin="14,0,0,0" VerticalAlignment="Center"/>
             </Grid>
@@ -492,26 +533,112 @@
           <RowDefinition Height="Auto"/>
         </Grid.RowDefinitions>
 
-        <StackPanel Grid.Row="0" Grid.Column="0">
+        <StackPanel Grid.Row="0" Grid.Column="0" Grid.IsSharedSizeScope="True">
           <ui:CardControl Margin="0,0,0,8">
           <ui:CardControl.Header>
             <StackPanel>
               <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                 <ui:SymbolIcon Symbol="Info24" FontSize="{DynamicResource FontSizeHeader}" Margin="0,0,8,0"/>
-                <TextBlock Text="{x:Static app:Strings.SysInfoHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" VerticalAlignment="Center"/>
+ <TextBlock Text="{x:Static app:Strings.SysInfoHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
               </StackPanel>
-              <TextBlock x:Name="SysManufacturerText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,2,0,0"/>
-              <TextBlock x:Name="SysModelText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,2,0,0"/>
-              <TextBlock x:Name="SysValidationText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,2,0,0"/>
-              <TextBlock x:Name="SysBoardText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,2,0,0"/>
-              <TextBlock x:Name="SysBiosText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,2,0,0"/>
-              <TextBlock x:Name="SysCpuText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,2,0,0"/>
-              <TextBlock x:Name="SysCpuTjmaxText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,2,0,0"/>
-              <TextBlock x:Name="SysGpuText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,2,0,0"/>
-              <TextBlock x:Name="SysNvidiaTjmaxText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,2,0,0"/>
-              <TextBlock x:Name="SysNvidiaPowerText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,2,0,0"/>
-              <TextBlock x:Name="SysAdapterText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,2,0,0"/>
-              <TextBlock x:Name="SysKbLightTypeText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+              <!-- ponytail: 双列信息行 — Auto 标签列(共享 InfoLabel 宽度,跨两卡对齐)+ * 值列(右对齐)。
+                   code-behind 只写值到 x:Name 的 TextBlock,标签为静态资源;值为空的行(无数据)整体 Collapsed。 -->
+              <Grid x:Name="SysManufacturerRow" Margin="0,2,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysManufacturer}"/><Run Text=":"/></TextBlock>
+                <TextBlock x:Name="SysManufacturerText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextWrapping="Wrap" TextAlignment="Right" Margin="8,0,0,0"/>
+              </Grid>
+              <Grid x:Name="SysModelRow" Margin="0,2,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysModel}"/><Run Text=":"/></TextBlock>
+                <TextBlock x:Name="SysModelText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextWrapping="Wrap" TextAlignment="Right" Margin="8,0,0,0"/>
+              </Grid>
+              <Grid x:Name="SysValidationRow" Margin="0,2,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysModelValidation}"/><Run Text=":"/></TextBlock>
+                <TextBlock x:Name="SysValidationText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextWrapping="Wrap" TextAlignment="Right" Margin="8,0,0,0"/>
+              </Grid>
+              <Grid x:Name="SysBoardRow" Margin="0,2,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysBoardProduct}"/><Run Text=":"/></TextBlock>
+                <TextBlock x:Name="SysBoardText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextWrapping="Wrap" TextAlignment="Right" Margin="8,0,0,0"/>
+              </Grid>
+              <Grid x:Name="SysBiosRow" Margin="0,2,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysBiosVersion}"/><Run Text=":"/></TextBlock>
+                <TextBlock x:Name="SysBiosText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextWrapping="Wrap" TextAlignment="Right" Margin="8,0,0,0"/>
+              </Grid>
+              <Grid x:Name="SysCpuRow" Margin="0,2,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysCpuModel}"/><Run Text=":"/></TextBlock>
+                <TextBlock x:Name="SysCpuText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextWrapping="Wrap" TextAlignment="Right" Margin="8,0,0,0"/>
+              </Grid>
+              <Grid x:Name="SysCpuTjmaxRow" Margin="0,2,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysCpuTjMax}"/><Run Text=":"/></TextBlock>
+                <TextBlock x:Name="SysCpuTjmaxText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextWrapping="Wrap" TextAlignment="Right" Margin="8,0,0,0"/>
+              </Grid>
+              <Grid x:Name="SysGpuRow" Margin="0,2,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysGpuList}"/><Run Text=":"/></TextBlock>
+                <TextBlock x:Name="SysGpuText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextWrapping="Wrap" TextAlignment="Right" Margin="8,0,0,0"/>
+              </Grid>
+              <Grid x:Name="SysNvidiaTjmaxRow" Margin="0,2,0,0" Visibility="Collapsed">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysNvidiaTjMax}"/><Run Text=":"/></TextBlock>
+                <TextBlock x:Name="SysNvidiaTjmaxText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextWrapping="Wrap" TextAlignment="Right" Margin="8,0,0,0"/>
+              </Grid>
+              <Grid x:Name="SysNvidiaPowerRow" Margin="0,2,0,0" Visibility="Collapsed">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysNvidiaPowerLimitLabel}"/><Run Text=":"/></TextBlock>
+                <TextBlock x:Name="SysNvidiaPowerText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextWrapping="Wrap" TextAlignment="Right" Margin="8,0,0,0"/>
+              </Grid>
+              <Grid x:Name="SysAdapterRow" Margin="0,2,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysAdapterPower}"/><Run Text=":"/></TextBlock>
+                <TextBlock x:Name="SysAdapterText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextWrapping="Wrap" TextAlignment="Right" Margin="8,0,0,0"/>
+              </Grid>
+              <Grid x:Name="SysKbLightTypeRow" Margin="0,2,0,0">
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                  <ColumnDefinition Width="*"/>
+                </Grid.ColumnDefinitions>
+                <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysKbType}"/><Run Text=":"/></TextBlock>
+                <TextBlock x:Name="SysKbLightTypeText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextWrapping="Wrap" TextAlignment="Right" Margin="8,0,0,0"/>
+              </Grid>
             </StackPanel>
           </ui:CardControl.Header>
         </ui:CardControl>
@@ -526,26 +653,110 @@
                   </Grid.ColumnDefinitions>
                   <StackPanel Orientation="Horizontal">
                     <ui:SymbolIcon Symbol="Info24" FontSize="{DynamicResource FontSizeHeader}" Margin="0,0,8,0"/>
-                    <TextBlock Text="{x:Static app:Strings.SensorTempsHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}"/>
+ <TextBlock Text="{x:Static app:Strings.SensorTempsHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold"/>
                   </StackPanel>
                   <Button x:Name="SysInfoRefreshBtn" Grid.Column="1"
                           Width="26" Height="20" Padding="0" Click="SysInfoRefresh_Click">
                     <ui:SymbolIcon Symbol="ArrowReset24" FontSize="{DynamicResource FontSizeTitle}"/>
                   </Button>
                 </Grid>
-                <TextBlock x:Name="SysCpuTempText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0"/>
-                <TextBlock x:Name="SysGpuTempText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0"/>
-                <TextBlock x:Name="SysIrSensorText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0"/>
-                <TextBlock x:Name="SysAmbientText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0"/>
-                <TextBlock x:Name="SysPchText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0"/>
-                <TextBlock x:Name="SysVrText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0"/>
-                <!-- ponytail: 额外温度传感器 — 默认 Collapsed,只在勾选 ID 时 Visible(见 IsExtraEnabled)。读不到显 "-"。 -->
-                <TextBlock x:Name="SysGpuHotSpotText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0" Visibility="Collapsed"/>
-                <TextBlock x:Name="SysCpuCoreMaxText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0" Visibility="Collapsed"/>
-                <TextBlock x:Name="SysCpuCoreAvgText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0" Visibility="Collapsed"/>
-                <TextBlock x:Name="SysCpuTjmaxDistanceText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0" Visibility="Collapsed"/>
-                <TextBlock x:Name="SysNvmeText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0" Visibility="Collapsed"/>
-                <TextBlock x:Name="SysMotherboardText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0" Visibility="Collapsed"/>
+                <Grid x:Name="SysCpuTempRow" Margin="0,2,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysCPUTemp}"/><Run Text=":"/></TextBlock>
+                  <TextBlock x:Name="SysCpuTempText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Right" Margin="8,0,0,0"/>
+                </Grid>
+                <Grid x:Name="SysGpuTempRow" Margin="0,2,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysGPUTemp}"/><Run Text=":"/></TextBlock>
+                  <TextBlock x:Name="SysGpuTempText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Right" Margin="8,0,0,0"/>
+                </Grid>
+                <Grid x:Name="SysIrSensorRow" Margin="0,2,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysIRSensor}"/><Run Text=":"/></TextBlock>
+                  <TextBlock x:Name="SysIrSensorText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Right" Margin="8,0,0,0"/>
+                </Grid>
+                <Grid x:Name="SysAmbientRow" Margin="0,2,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysAmbient}"/><Run Text=":"/></TextBlock>
+                  <TextBlock x:Name="SysAmbientText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Right" Margin="8,0,0,0"/>
+                </Grid>
+                <Grid x:Name="SysPchRow" Margin="0,2,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysPCH}"/><Run Text=":"/></TextBlock>
+                  <TextBlock x:Name="SysPchText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Right" Margin="8,0,0,0"/>
+                </Grid>
+                <Grid x:Name="SysVrRow" Margin="0,2,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysVR}"/><Run Text=":"/></TextBlock>
+                  <TextBlock x:Name="SysVrText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Right" Margin="8,0,0,0"/>
+                </Grid>
+                <!-- ponytail: 额外温度传感器 — 默认 Collapsed,只在勾选 ID 且硬件有读值时 Visible(见 UpdateExtraTempRow)。读不到显 "-"。 -->
+                <Grid x:Name="SysGpuHotSpotRow" Margin="0,2,0,0" Visibility="Collapsed">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysGpuHotSpot}"/><Run Text=":"/></TextBlock>
+                  <TextBlock x:Name="SysGpuHotSpotText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Right" Margin="8,0,0,0"/>
+                </Grid>
+                <Grid x:Name="SysCpuCoreMaxRow" Margin="0,2,0,0" Visibility="Collapsed">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysCpuCoreMax}"/><Run Text=":"/></TextBlock>
+                  <TextBlock x:Name="SysCpuCoreMaxText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Right" Margin="8,0,0,0"/>
+                </Grid>
+                <Grid x:Name="SysCpuCoreAvgRow" Margin="0,2,0,0" Visibility="Collapsed">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysCpuCoreAvg}"/><Run Text=":"/></TextBlock>
+                  <TextBlock x:Name="SysCpuCoreAvgText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Right" Margin="8,0,0,0"/>
+                </Grid>
+                <Grid x:Name="SysCpuTjmaxDistanceRow" Margin="0,2,0,0" Visibility="Collapsed">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysCpuTjmaxDistance}"/><Run Text=":"/></TextBlock>
+                  <TextBlock x:Name="SysCpuTjmaxDistanceText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Right" Margin="8,0,0,0"/>
+                </Grid>
+                <Grid x:Name="SysNvmeRow" Margin="0,2,0,0" Visibility="Collapsed">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysNvme}"/><Run Text=":"/></TextBlock>
+                  <TextBlock x:Name="SysNvmeText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Right" Margin="8,0,0,0"/>
+                </Grid>
+                <Grid x:Name="SysMotherboardRow" Margin="0,2,0,0" Visibility="Collapsed">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysMotherboard}"/><Run Text=":"/></TextBlock>
+                  <TextBlock x:Name="SysMotherboardText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Right" Margin="8,0,0,0"/>
+                </Grid>
               </StackPanel>
             </ui:CardControl.Header>
           </ui:CardControl>
@@ -560,7 +771,7 @@
                   </Grid.ColumnDefinitions>
                   <StackPanel Orientation="Horizontal">
                     <ui:SymbolIcon Symbol="DeviceEq24" FontSize="{DynamicResource FontSizeHeader}" Margin="0,0,8,0"/>
-                    <TextBlock Text="{x:Static app:Strings.GpuAppsMenu}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" VerticalAlignment="Center"/>
+ <TextBlock Text="{x:Static app:Strings.GpuAppsMenu}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                   </StackPanel>
                   <TextBlock x:Name="GpuAppCountText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextFillColorTertiaryBrush}" VerticalAlignment="Center"/>
                 </Grid>
@@ -580,9 +791,11 @@
               <StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                   <ui:SymbolIcon Symbol="Settings24" FontSize="{DynamicResource FontSizeHeader}" Margin="0,0,8,0"/>
-                  <TextBlock Text="{x:Static app:Strings.SysPawnTitle}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" VerticalAlignment="Center"/>
+ <TextBlock Text="{x:Static app:Strings.SysPawnTitle}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                 </StackPanel>
                 <TextBlock x:Name="SysPawnIoText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" TextWrapping="Wrap" Margin="0,2,0,0"/>
+                <Button x:Name="PawnIoInstallBtn" Content="{x:Static app:Strings.SysPawnInstallBtn}"
+                        Margin="0,8,0,0" MinWidth="84" Click="InstallPawnIo_Click" Visibility="Collapsed"/>
               </StackPanel>
             </ui:CardControl.Header>
           </ui:CardControl>
@@ -597,7 +810,7 @@
                   </Grid.ColumnDefinitions>
                   <StackPanel Orientation="Horizontal">
                     <ui:SymbolIcon Symbol="Info24" FontSize="{DynamicResource FontSizeHeader}" Margin="0,0,8,0"/>
-	                    <TextBlock Text="{x:Static app:Strings.DashboardHpDriverPage}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" VerticalAlignment="Center"/>
+ <TextBlock Text="{x:Static app:Strings.DashboardHpDriverPage}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                   </StackPanel>
                   <Button Grid.Column="1" Width="26" Height="20" Padding="0" Click="HpDriverSearch_Click">
                     <ui:SymbolIcon Symbol="ArrowRight24" FontSize="{DynamicResource FontSizeTitle}"/>
@@ -615,7 +828,7 @@
               <StackPanel>
                 <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                   <ui:SymbolIcon Symbol="LeafOne24" FontSize="{DynamicResource FontSizeHeader}" Margin="0,0,8,0"/>
-                  <TextBlock Text="{x:Static app:Strings.HwMonitorHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" VerticalAlignment="Center"/>
+ <TextBlock Text="{x:Static app:Strings.HwMonitorHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                 </StackPanel>
                   <Grid Margin="0,0,0,6">
                     <Grid.ColumnDefinitions>

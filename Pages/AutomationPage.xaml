@@ -4,12 +4,12 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:app="clr-namespace:OmenSuperHub"
       Title="{x:Static app:Strings.PageAutomation}">
-  <ScrollViewer VerticalScrollBarVisibility="Auto">
-    <StackPanel Margin="24,20" TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
-      <TextBlock x:Name="HeadingAutomation" Text="{x:Static app:Strings.AutomationHeading}" Tag="AutomationHeading" FontSize="22" FontWeight="Bold" Margin="0,0,0,16"/>
+  <ScrollViewer Style="{DynamicResource OmenScrollViewer}" VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="{DynamicResource PageMargin}" TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
+      <TextBlock x:Name="HeadingAutomation" Text="{x:Static app:Strings.AutomationHeading}" FontSize="{DynamicResource FontSizePageTitle}" FontWeight="Medium" Margin="0,0,0,16"/>
 
       <!-- ══════ 1. 主开关卡片 ══════ -->
-      <ui:CardControl Margin="0,0,0,8">
+      <ui:CardControl Margin="{StaticResource CardMargin}">
         <ui:CardControl.Header>
           <Grid>
             <Grid.ColumnDefinitions>
@@ -18,11 +18,11 @@
             </Grid.ColumnDefinitions>
             <StackPanel>
               <StackPanel Orientation="Horizontal">
-                <ui:SymbolIcon Symbol="Settings24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-	                <TextBlock Text="{x:Static app:Strings.AutoEnableHeading}" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-	              </StackPanel>
-	              <TextBlock Text="{x:Static app:Strings.AutoEnableDesc}" FontSize="{DynamicResource FontSizeCaption}"
-                         Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0"/>
+                <ui:SymbolIcon Symbol="Settings24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="{StaticResource CardHeaderIconMargin}"/>
+                <TextBlock Text="{x:Static app:Strings.AutoEnableHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+              </StackPanel>
+              <TextBlock Text="{x:Static app:Strings.AutoEnableDesc}" FontSize="{DynamicResource FontSizeCaption}"
+                         Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="{StaticResource CardHeaderDescMargin}"/>
             </StackPanel>
             <ui:ToggleSwitch x:Name="AutoEnableToggle" Grid.Column="1" VerticalAlignment="Center"
                             Checked="AutoEnableToggle_Checked" Unchecked="AutoEnableToggle_Unchecked"/>
@@ -30,57 +30,51 @@
         </ui:CardControl.Header>
       </ui:CardControl>
 
-      <!-- ══════ 2. 自动化列表区域（无卡片） ══════ -->
-      <StackPanel Margin="0,0,0,0">
-        <!-- 动态管道列表 -->
-        <StackPanel x:Name="AutoPipelineList"/>
-        <!-- 空状态 / 操作按钮 -->
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="Auto"/>
-          </Grid.ColumnDefinitions>
-          <StackPanel Grid.Column="1" HorizontalAlignment="Right">
-		            <TextBlock x:Name="AutoNoPipelines"
-			                       Text="{x:Static app:Strings.AutoNoPipelinesText}"
-			                       FontSize="{DynamicResource FontSizeBody}" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-			                       Margin="0,8,16,8" HorizontalAlignment="Right" TextAlignment="Right" Visibility="Visible"/>
-		            <Button x:Name="AutoAddPipelineBtn" Content="{x:Static app:Strings.AutoAddNew}" MinWidth="100" Height="30"
-                    HorizontalAlignment="Right"
-                    ToolTip="{x:Static app:Strings.AutoAddDisabledTooltip}"
-                    Click="AutoAddPipeline_Click"/>
-          </StackPanel>
-        </Grid>
+      <!-- ══════ 2. 自动化脚本 ══════
+           ponytail: 分区头(标题+说明)不套卡片,卡片只留给真正带控件的条目 —— 与
+           LenovoLegionToolkit AutomationPage 同一套节奏:标题段 → 条目列表 → 居中空态 → 右对齐新建。
+           原实现把「新建」放在标题行右侧、空态挤在左边,标题与按钮抢同一水平线,视觉重心散。 -->
+      <StackPanel Margin="0,16,0,12">
+        <TextBlock Text="{x:Static app:Strings.AutoPipelinesHeading}" FontSize="{DynamicResource FontSizeSubheader}"
+                   FontWeight="SemiBold"/>
+        <TextBlock Text="{x:Static app:Strings.AutoPipelinesDesc}" FontSize="{DynamicResource FontSizeBody}"
+                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,4,0,0"/>
       </StackPanel>
 
-      <!-- ══════ 3. 快捷操作区域 ══════ -->
-      <StackPanel Margin="0,24,0,0">
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="Auto"/>
-          </Grid.ColumnDefinitions>
-          <StackPanel VerticalAlignment="Top">
-            <StackPanel Orientation="Horizontal">
-              <ui:SymbolIcon Symbol="DeviceEq24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-              <TextBlock x:Name="AutoQuickActionsText" Text="{x:Static app:Strings.AutomationQuickActions}"
-                         FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
-            </StackPanel>
-	            <TextBlock Text="{x:Static app:Strings.AutoQuickActionsDesc}" FontSize="{DynamicResource FontSizeCaption}"
-                       Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,4,0,0"/>
-          </StackPanel>
-          <StackPanel Grid.Column="1" HorizontalAlignment="Right">
-	            <TextBlock x:Name="AutoNoQuickActions"
-			                       Text="{x:Static app:Strings.AutoNoQuickActionsText}"
-			                       FontSize="{DynamicResource FontSizeBody}" Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-			                       Margin="0,0,16,8" HorizontalAlignment="Right" TextAlignment="Right" Visibility="Visible"/>
-		            <Button x:Name="AutoAddQuickActionBtn" Content="{x:Static app:Strings.AutoAddNew}" MinWidth="100" Height="30"
-                    HorizontalAlignment="Right"
-                    ToolTip="{x:Static app:Strings.AutoAddDisabledTooltip}"
-                    Click="AutoAddQuickAction_Click"/>
-          </StackPanel>
-        </Grid>
-        <WrapPanel x:Name="AutoQuickActionPanel" Margin="0,8,0,0"/>
+      <StackPanel x:Name="AutoPipelineList"/>
+
+      <!-- 空态:居中,文案随总开关切换;规格见 OmenEmptyState -->
+      <StackPanel x:Name="AutoNoPipelines" Margin="0,16,0,16" Visibility="Visible">
+        <TextBlock x:Name="AutoNoPipelinesLabel" Text="{x:Static app:Strings.AutoNoPipelinesText}"
+                   Style="{StaticResource OmenEmptyState}"/>
+      </StackPanel>
+
+      <StackPanel Margin="0,8,0,0" HorizontalAlignment="Right">
+        <ui:Button x:Name="AutoAddPipelineBtn" Content="{x:Static app:Strings.AutoAddNew}" MinWidth="120"
+                   Appearance="Primary" ToolTip="{x:Static app:Strings.AutoAddDisabledTooltip}"
+                   Click="AutoAddPipeline_Click"/>
+      </StackPanel>
+
+      <!-- ══════ 3. 快捷操作 ══════ -->
+      <StackPanel Margin="0,24,0,12">
+        <TextBlock x:Name="AutoQuickActionsText" Text="{x:Static app:Strings.AutomationQuickActions}"
+                   FontSize="{DynamicResource FontSizeSubheader}" FontWeight="SemiBold"/>
+        <TextBlock Text="{x:Static app:Strings.AutoQuickActionsDesc}" FontSize="{DynamicResource FontSizeBody}"
+                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,4,0,0"/>
+      </StackPanel>
+
+      <WrapPanel x:Name="AutoQuickActionPanel"/>
+
+      <StackPanel x:Name="AutoNoQuickActions" Margin="0,16,0,16" HorizontalAlignment="Center" Visibility="Visible">
+        <TextBlock x:Name="AutoNoQuickActionsLabel" Text="{x:Static app:Strings.AutoNoQuickActionsText}"
+                   FontSize="{DynamicResource FontSizeBody}" FontWeight="Medium" TextAlignment="Center"
+                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+      </StackPanel>
+
+      <StackPanel Margin="0,8,0,0" HorizontalAlignment="Right">
+        <ui:Button x:Name="AutoAddQuickActionBtn" Content="{x:Static app:Strings.AutoAddNew}" MinWidth="120"
+                   Appearance="Primary" ToolTip="{x:Static app:Strings.AutoAddDisabledTooltip}"
+                   Click="AutoAddQuickAction_Click"/>
       </StackPanel>
 
     </StackPanel>

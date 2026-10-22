@@ -30,6 +30,11 @@ namespace OmenSuperHub.Utils {
     const int HoverDelayMs = 120;
     // How long the cursor must stay gone before we raise MouseLeave
     const int LeaveDelayMs = 80;
+    // ponytail: issue #33 —— 进入 hover 还必须有"新鲜"的 Shell WM_MOUSEMOVE 送达。
+    // 旧逻辑只看光标是否停在"上次真实 hover 记下的坐标"附近,任务栏自动隐藏/图标移位后
+    // 这些坐标成了幽灵位置 —— 鼠标经过空槽位没有任何 Shell 回调也照样弹浮窗(图一/图三)。
+    // 要求进入前 EnterFreshMs 内有真实回调,静止悬停不受影响(进入前光标必在移动,回调已到达)。
+    const int EnterFreshMs = 400;
 
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
     struct NOTIFYICONDATAW {
@@ -53,9 +58,24 @@ namespace OmenSuperHub.Utils {
     [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
     static extern bool Shell_NotifyIconW(uint msg, ref NOTIFYICONDATAW data);
 
+    [DllImport("user32.dll", CharSet = CharSet.Auto)]
+    static extern uint RegisterWindowMessage(string lpString);
+
+    /// <summary>explorer.exe 重建任务栏后向所有顶层窗口广播的消息。
+    /// ponytail: 消息号由系统动态分配,必须用 RegisterWindowMessage 的返回值比较,不能写死常量。
+    /// 静态只读 —— 全进程注册一次;RegisterWindowMessage 幂等(同名返回同一号)。</summary>
+    static readonly uint WM_TASKBARCREATED = RegisterWindowMessage("TaskbarCreated");
+
     static uint _nextId;
     readonly uint _id = ++_nextId;
     bool _added;
+    /// <summary>收到 TaskbarCreated 广播并重新 NIM_ADD 的次数。仅用于 --selftest 断言;
+    /// 现场排查时也是"explorer 重启过几次"的直接证据。</summary>
+    internal int TaskbarRecreateCount { get; private set; }
+    /// <summary>仅用于 --selftest:当前是否认为图标已在 Shell 里注册。</summary>
+    internal bool IsRegistered => _added;
+    /// <summary>仅用于 --selftest:TaskbarCreated 的动态消息号,0 表示注册失败。</summary>
+    internal static uint TaskbarCreatedMessage => WM_TASKBARCREATED;
     bool _visible;
     Icon _icon;
     string _tipText;
@@ -137,6 +157,22 @@ namespace OmenSuperHub.Utils {
       }
     }
 
+    /// <summary>explorer 重建任务栏后重新挂载图标。先 NIM_DELETE 清掉可能残留的旧条目,
+    /// 再 NIM_ADD —— 只置 _added=false 直接 Update() 时,若 Shell 侧其实没清干净,
+    /// NIM_ADD 会因 (hWnd, uID) 已存在而失败,随后重试定时器每 2s 空转一次。</summary>
+    void ReAddToShell() {
+      if (!_visible) { _added = false; StopRetry(); return; }
+      var data = new NOTIFYICONDATAW {
+        cbSize = (uint)Marshal.SizeOf<NOTIFYICONDATAW>(),
+        hWnd = Handle,
+        uID = _id
+      };
+      Shell_NotifyIconW(NIM_DELETE, ref data);   // 不存在时返回 false,无害
+      _added = false;
+      StopRetry();
+      Update();                                  // 走 !_added 分支重新 NIM_ADD
+    }
+
     void StartRetry() {
       if (_retryTimer != null) return;
       _retryTimer = new System.Windows.Forms.Timer { Interval = 2000 };
@@ -171,6 +207,16 @@ namespace OmenSuperHub.Utils {
     }
 
     protected override void WndProc(ref Message m) {
+      // explorer.exe 重启(崩溃恢复、Modern Standby 超时被 Winlogon 重启 shell 等)后,
+      // Shell 侧已清空所有托盘图标,但本对象 _added 仍是 true —— 后续 Update() 永远只发
+      // NIM_MODIFY(对不存在的图标无效),图标就此永久消失,只能重启程序。
+      // 收到广播必须先把 _added 置回 false,Update() 才会重新走 NIM_ADD 分支。
+      if (WM_TASKBARCREATED != 0 && m.Msg == WM_TASKBARCREATED) {
+        ReAddToShell();
+        TaskbarRecreateCount++;
+        base.WndProc(ref m);
+        return;
+      }
       if (m.Msg == TRAY_CALLBACK) {
         var lo = (uint)m.LParam & 0xFFFF;
         switch (lo) {
@@ -250,8 +296,11 @@ namespace OmenSuperHub.Utils {
       if (nearIcon) {
         _leaveTick = 0;
         if (!_isHovering) {
+          // ponytail: 进入必须有 Shell 新鲜回调背书(见 EnterFreshMs)。leave/保持路径
+          // 不加此约束 —— 静止悬停时本就只有进入前的移动才产生回调。
+          bool shellConfirmed = Environment.TickCount - _lastMoveTick <= EnterFreshMs;
           _hoverSeenMoves++;
-          if (_hoverSeenMoves >= 2) {   // ~80ms of presence before opening
+          if (_hoverSeenMoves >= 2 && shellConfirmed) {   // ~80ms of presence before opening
             _isHovering = true;
             MouseEnter?.Invoke();
           }

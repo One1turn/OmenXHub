@@ -16,6 +16,10 @@ namespace OmenSuperHub.Pages {
     List<ProcessItemView> _allProcesses = new List<ProcessItemView>();
     bool _sortByCpu = true;
     bool _loading; // ponytail: 页面初始化时屏蔽 IsChecked/Value 赋值触发的 Changed 事件,避免冗余 StartAutoApply/Save
+    // 评审#40: 一次枚举 = 两轮全进程快照 + 500ms CPU 采样(见 CoreKeepService.EnumerateProcessesWithCpu)，
+    // 旧实现无门控：连点刷新堆叠线程池任务，且先起的旧快照可能后落地，把新快照覆盖掉。
+    bool _processListBusy;  // 重入门控：在途期间不再起新一轮枚举
+    int _processListSeq;    // 代际序号：只有最后一次请求的回调允许落到 UI
 
     // ponytail: 强制级别常量 — 对齐 EnforcementService 4 级
     const string SoftCpuSets = "soft-cpu-sets";
@@ -181,31 +185,16 @@ namespace OmenSuperHub.Pages {
       CoreVisualGrid.ItemsSource = items;
     }
 
-    // ponytail: 画刷静态冻结 — 进程列表刷新/过滤时每行 new ×2 未冻结画刷造成 GC 洪峰;
-    // 冻结后跨线程可用且系统可缓存渲染。颜色与图例一一对应,运行期不变。
-    static readonly SolidColorBrush BrushP = Frozen(0xE7, 0x48, 0x56);   // 亮红
-    static readonly SolidColorBrush BrushE = Frozen(0x00, 0x78, 0xD4);   // 蓝
-    static readonly SolidColorBrush BrushSmt1 = Frozen(0x8B, 0x95, 0xA1); // 浅灰
-    static readonly SolidColorBrush BrushDefault = Frozen(0x5B, 0x6B, 0x73); // 深灰 (SMT0)
-
-    static SolidColorBrush Frozen(byte r, byte g, byte b) {
-      var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
-      brush.Freeze();
-      return brush;
-    }
-    static SolidColorBrush FrozenAlpha(byte a, byte r, byte g, byte b) {
-      var brush = new SolidColorBrush(Color.FromArgb(a, r, g, b));
-      brush.Freeze();
-      return brush;
-    }
-
-    static SolidColorBrush CoreTypeToBrush(string type) {
-      switch (type) {
-        case "P":    return BrushP;
-        case "E":    return BrushE;
-        case "SMT1": return BrushSmt1;
-        default:     return BrushDefault;
-      }
+    // ponytail: 画刷改由双主题资源供给(Colors.Dark/Light 的 CoreType*/Accent* 键),不再在
+    // code-behind 冻一份 hex —— 与 XAML 图例/统计卡同源,消除两份硬编码漂移。资源随主题字典合并必存在。
+    Brush CoreTypeToBrush(string type) {
+      string key = type switch {
+        "P" => "AccentRedBrush",
+        "E" => "AccentBlueBrush",
+        "SMT1" => "CoreTypeSmt1Brush",
+        _ => "CoreTypeSmt0Brush",
+      };
+      return TryFindResource(key) as Brush;
     }
 
     void UpdateTopologyText() {
@@ -238,9 +227,17 @@ namespace OmenSuperHub.Pages {
 
     void RefreshProcessList() {
       // ponytail: 后台线程枚举进程 + CPU 采样，避免阻塞 UI
+      // 评审#40: 门控 + 代际序号。在途时直接丢弃新请求（最新一轮枚举必然覆盖本次要看的状态，
+      // 排队反而放大乱序窗口）；序号兜底保证即使有多轮回调在飞，也只有最后一次的结果落到 UI。
+      // 天花板：连点刷新的第二下不重扫，若要做到"合并最新请求"，改为 pending 标志在回调里补发。
+      if (_processListBusy) return;
+      _processListBusy = true;
+      int seq = ++_processListSeq;
       System.Threading.ThreadPool.QueueUserWorkItem(_ => {
         var procs = CoreKeepService.EnumerateProcessesWithCpu();
         Dispatcher.BeginInvoke(new Action(() => {
+          _processListBusy = false;
+          if (seq != _processListSeq) return; // 过期快照：丢弃，不动 _allProcesses/列表
           _allProcesses = procs.Select(p => {
             var v = new ProcessItemView {
               Pid = p.Pid,
@@ -304,35 +301,18 @@ namespace OmenSuperHub.Pages {
       return pid.ToString() == query;
     }
 
-    // ponytail: 按强制级别设置进程列表标签颜色 — soft 蓝 / hard 黄 / enforced 橙 / locked 红
-    static readonly SolidColorBrush BadgeSoft = FrozenAlpha(0x33, 0x00, 0x78, 0xD4);
-    static readonly SolidColorBrush BadgeSoftFg = Frozen(0x00, 0x78, 0xD4);
-    static readonly SolidColorBrush BadgeHard = FrozenAlpha(0x33, 0xFF, 0xB9, 0x00);
-    static readonly SolidColorBrush BadgeHardFg = Frozen(0xFF, 0xB9, 0x00);
-    static readonly SolidColorBrush BadgeEnforced = FrozenAlpha(0x33, 0xF7, 0x63, 0x0C);
-    static readonly SolidColorBrush BadgeEnforcedFg = Frozen(0xF7, 0x63, 0x0C);
-    static readonly SolidColorBrush BadgeLocked = FrozenAlpha(0x33, 0xE7, 0x48, 0x56);
-    static readonly SolidColorBrush BadgeLockedFg = Frozen(0xE7, 0x48, 0x56);
-
-    static void ApplyLevelColors(ProcessItemView v) {
-      switch (v.RuleLevel) {
-        case "soft-cpu-sets":
-          v.RuleBadgeBrush = BadgeSoft;
-          v.RuleBadgeForeground = BadgeSoftFg;
-          break;
-        case "hard-affinity":
-          v.RuleBadgeBrush = BadgeHard;
-          v.RuleBadgeForeground = BadgeHardFg;
-          break;
-        case "job-enforced":
-          v.RuleBadgeBrush = BadgeEnforced;
-          v.RuleBadgeForeground = BadgeEnforcedFg;
-          break;
-        case "job-locked":
-          v.RuleBadgeBrush = BadgeLocked;
-          v.RuleBadgeForeground = BadgeLockedFg;
-          break;
-      }
+    // ponytail: 按强制级别设置进程列表标签颜色 — 色值取自双主题资源(XAML LevelBadge* 同源)
+    void ApplyLevelColors(ProcessItemView v) {
+      (string bg, string fg) = v.RuleLevel switch {
+        "soft-cpu-sets"  => ("CoreKeepBadgeHintBrush", "CoreKeepBadgeHintFgBrush"),
+        "hard-affinity"  => ("CoreKeepBadgeSoftBrush", "CoreKeepBadgeSoftFgBrush"),
+        "job-enforced"   => ("CoreKeepBadgeHardBrush", "CoreKeepBadgeHardFgBrush"),
+        "job-locked"     => ("CoreKeepBadgeLockedBrush", "CoreKeepBadgeLockedFgBrush"),
+        _ => (null, null),
+      };
+      if (bg == null) return;
+      v.RuleBadgeBrush = TryFindResource(bg) as SolidColorBrush;
+      v.RuleBadgeForeground = TryFindResource(fg) as SolidColorBrush;
     }
 
     void ProcessSearch_TextChanged(object sender, TextChangedEventArgs e) {
@@ -654,7 +634,10 @@ namespace OmenSuperHub.Pages {
       var selected = CoreKeepList.SelectedItem as CoreKeepEntry;
       if (selected == null) return;
       var data = CoreKeepService.Load();
-      data.Entries.RemoveAll(x => x.ProcessName == selected.ProcessName);
+      // 评审#4: 必须按 (ProcessName, ProcessId) 精确删 —— 旧实现只比名称 RemoveAll，
+      // PID 规则(ProcessId>0，CaptureFromPid 也会写 ProcessName)与同名名称规则(ProcessId=0)
+      // 互为兄弟，删一条连带把另一条也抹掉（数据丢失）。
+      data.Entries.RemoveAll(x => x.ProcessName == selected.ProcessName && x.ProcessId == selected.ProcessId);
       CoreKeepService.Save(data);
       _currentSelectedEntry = null;
       CoreKeepProcInput.Text = "";
@@ -682,7 +665,7 @@ namespace OmenSuperHub.Pages {
         string procName = raw.EndsWith(".exe", StringComparison.OrdinalIgnoreCase) ? raw : raw + ".exe";
         if (data.Entries.Exists(x => x.ProcessName.Equals(procName, StringComparison.OrdinalIgnoreCase))) return;
         entry = CoreKeepService.CaptureFromProcess(procName);
-        if (entry.AffinityMask == 0 && entry.PriorityClass == 0) return;
+        // ponytail: 名称捕获本就不带 mask/priority，旧的双 0 守卫在此恒真，名称添加永远静默失败
       }
       entry.Enabled = true;
       entry.CoreMode = "all-cores";
@@ -695,7 +678,17 @@ namespace OmenSuperHub.Pages {
       CoreKeepService.Save(data);
       CoreKeepProcInput.Text = "";
       RefreshCoreKeepList(data);
-      if (data.MasterEnabled) CoreKeepService.StartAutoApply(data);
+      // 评审#5: 对齐 InitCoreKeepUI 的 IsRunning→SyncRules 模式 —— 旧实现运行时加规则无条件
+      // StartAutoApply，内部 StopAutoApply 先 fire-and-forget RelaxAll，再排队 ApplyAll，
+      // 两个线程池任务顺序无保证，等于给全部受管进程开一个"先解绑再绑回"的瞬态窗口。
+      // 同步规则不重启定时器，也就没了 StartAutoApply 的首轮 ApplyAll —— 新规则对已在跑的进程
+      // 改用现成的逐条应用入口补一次（守护关闭时 GuardTick 不会补这一拍，必须显式应用）。
+      if (data.MasterEnabled) {
+        if (CoreKeepService.IsRunning) {
+          CoreKeepService.SyncRules(data);
+          CoreKeepService.ApplyToProcess(entry.ProcessName, entry);
+        } else CoreKeepService.StartAutoApply(data);
+      }
     }
 
     // ── 模式/优先级/强制级别 ComboBox 变更 ──
@@ -792,9 +785,11 @@ namespace OmenSuperHub.Pages {
       if (_currentSelectedEntry == null) return;
       string name = CoreKeepRuleNameInput.Text?.Trim();
       if (string.IsNullOrEmpty(name) || _currentSelectedEntry.ProcessName == name) return;
-      // ponytail: 规则名称修改同步到 ProcessName（CoreKeep 模型以 ProcessName 为标识）
+      // ponytail: 规则名称修改同步到 ProcessName（CoreKeep 模型以 ProcessName 为标识）；
+      // 先存旧标识再改 — PersistEntryChange 按旧名才能找到存量条目
+      string oldName = _currentSelectedEntry.ProcessName;
       _currentSelectedEntry.ProcessName = name;
-      PersistEntryChange();
+      PersistEntryChange(oldName);
       RefreshCoreKeepList(CoreKeepService.Load());
     }
 
@@ -813,8 +808,9 @@ namespace OmenSuperHub.Pages {
       if (_currentSelectedEntry == null) return;
       string pattern = CoreKeepProcessPatternInput.Text?.Trim();
       if (_currentSelectedEntry.ProcessName == pattern) return;
+      string oldName = _currentSelectedEntry.ProcessName; // 改标识前存旧名，否则存量条目找不到
       _currentSelectedEntry.ProcessName = string.IsNullOrEmpty(pattern) ? "" : pattern;
-      PersistEntryChange();
+      PersistEntryChange(oldName);
       RefreshCoreKeepList(CoreKeepService.Load());
     }
 
@@ -850,14 +846,39 @@ namespace OmenSuperHub.Pages {
 
     bool TryParseCustomMask() {
       string raw = CoreKeepCustomMaskInput.Text?.Trim();
-      if (string.IsNullOrEmpty(raw)) return false;
+      // 空 = 还没填（从别的模式切到 custom 时最常见），不算用户错误：只回显条目现值，不弹提示
+      if (string.IsNullOrEmpty(raw)) { EchoEntryMask(); return false; }
       // ponytail: 支持 0xFF、FF、0XFF 多种格式
       string hex = raw.StartsWith("0x", StringComparison.OrdinalIgnoreCase) ? raw.Substring(2) : raw;
-      if (long.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out long mask)) {
-        _currentSelectedEntry.AffinityMask = mask;
-        return true;
+      if (!long.TryParse(hex, System.Globalization.NumberStyles.HexNumber, null, out long mask)) {
+        // 评审#41: 旧实现这里静默 return false —— 垃圾文本留在框里、条目掩码纹丝不动，
+        // 调用方(LostFocus/模式切换)也不提示不回显，用户以为改成功了。
+        RejectCustomMaskInput();
+        return false;
       }
-      return false;
+      // 钳到有效逻辑核位;mask=0 对 SetProcessAffinityMask 非法(规则会静默死掉),拒绝
+      // 并把输入框回显为条目现值,用户可感知。截断成功时把钳后值回写,显示即下发。
+      int total = CoreKeepService.GetTopologyInfo().TotalLogical;
+      if (!CoreKeepService.TryClampAffinityMask(mask, total, out long clamped)) {
+        RejectCustomMaskInput();
+        return false;
+      }
+      _currentSelectedEntry.AffinityMask = clamped;
+      if (clamped != mask) CoreKeepCustomMaskInput.Text = "0x" + clamped.ToString("X");
+      return true;
+    }
+
+    void EchoEntryMask() =>
+      CoreKeepCustomMaskInput.Text = "0x" + _currentSelectedEntry.AffinityMask.ToString("X");
+
+    // 评审#41: 失败必须可见 —— 回显条目现值(显示即所存)+ 弹提示重申契约。
+    // 契约仍是"仅十六进制"(Strings.CoreKeepCustomMaskHint 已声明)，不加十进制回退。
+    // BeginInvoke 延后弹：在 LostFocus/SelectionChanged 里直接 ShowDialog 会抢激活、吞掉用户当次点击。
+    void RejectCustomMaskInput() {
+      EchoEntryMask();
+      Dispatcher.BeginInvoke(new Action(() =>
+        DialogHelper.Warn(Strings.CoreKeepCustomMaskHint, Strings.CoreKeepCustomMaskLabel)),
+        System.Windows.Threading.DispatcherPriority.Background);
     }
 
     void CoreKeepLockToggle_Changed(object sender, RoutedEventArgs e) {
@@ -881,11 +902,12 @@ namespace OmenSuperHub.Pages {
 
     // ── 持久化辅助 ──
 
-    void PersistEntryChange() {
+    /// <summary>nameKey：调用方已改过 ProcessName 标识时传旧名，否则按当前名查找。</summary>
+    void PersistEntryChange(string nameKey = null) {
       var data = CoreKeepService.Load();
       var existing = _currentSelectedEntry.ProcessId > 0
         ? data.Entries.Find(x => x.ProcessId == _currentSelectedEntry.ProcessId)
-        : data.Entries.Find(x => x.ProcessName == _currentSelectedEntry.ProcessName);
+        : data.Entries.Find(x => x.ProcessName == (nameKey ?? _currentSelectedEntry.ProcessName));
       if (existing != null) {
         existing.CoreMode = _currentSelectedEntry.CoreMode;
         existing.AffinityMask = _currentSelectedEntry.AffinityMask;
@@ -930,25 +952,21 @@ namespace OmenSuperHub.Pages {
       bool on = CoreKeepGuardToggle.IsChecked == true;
       CoreKeepGuardInterval.IsEnabled = on;
       var data = CoreKeepService.Load();
-      data.GuardIntervalMs = on ? (int)(CoreKeepGuardInterval.Value * 1000) : -1;
+      // R15/BUG-R15-5: NumberBox.Value 是 double? —— 用户清空输入框后 (int)(null*1000) 抛
+      // InvalidOperationException(Nullable object must have a value)。FanPage 同款控件已有
+      // null 守卫,此处对齐:空值回退默认 2s。
+      data.GuardIntervalMs = on ? (int)((CoreKeepGuardInterval.Value ?? 2) * 1000) : -1;
       CoreKeepService.Save(data);
-      if (on) {
-        CoreKeepService.UpdateGuardInterval(data.GuardIntervalMs);
-        foreach (var entry in data.Entries) entry.GuardEnabled = true;
-        CoreKeepService.Save(data);
-      } else {
-        foreach (var entry in data.Entries) entry.GuardEnabled = false;
-        CoreKeepService.Save(data);
-        CoreKeepService.StopAutoApply();
-        if (CoreKeepMasterToggle.IsChecked == true)
-          CoreKeepService.StartAutoApply(data);
-      }
+      // ponytail: 关守护只停定时器 — 旧实现 Stop/Start AutoApply 触发全量 Relax+重应用，
+      // 两个线程池任务顺序无保证可能互相覆盖；-1 由 UpdateGuardInterval 解释为停定时器。
+      CoreKeepService.UpdateGuardInterval(data.GuardIntervalMs);
     }
 
     void CoreKeepGuardInterval_Changed(object s, RoutedEventArgs e) {
       if (_loading || CoreKeepGuardInterval == null) return;
       var data = CoreKeepService.Load();
-      data.GuardIntervalMs = (int)(CoreKeepGuardInterval.Value * 1000);
+      // R15/BUG-R15-5: 同上 —— Value 可空,清空输入框时回退默认 2s,不再抛。
+      data.GuardIntervalMs = (int)((CoreKeepGuardInterval.Value ?? 2) * 1000);
       CoreKeepService.Save(data);
       CoreKeepService.UpdateGuardInterval(data.GuardIntervalMs);
     }
@@ -1130,6 +1148,7 @@ namespace OmenSuperHub.Pages {
       foreach (var en in data.Entries) {
         if (!string.IsNullOrEmpty(en.ProcessName)) existingNames.Add(en.ProcessName);
       }
+      var newEntries = new List<CoreKeepEntry>();
       foreach (var t in targets) {
         if (string.IsNullOrEmpty(t.Name) || existingNames.Contains(t.Name)) { skipped++; continue; }
         var entry = CoreKeepService.CaptureFromProcess(t.Name);
@@ -1139,12 +1158,20 @@ namespace OmenSuperHub.Pages {
         entry.GuardEnabled = true;
         CoreKeepService.ApplyModeToEntry(entry, mode);
         data.Entries.Add(entry);
+        newEntries.Add(entry);
         existingNames.Add(t.Name);
         added++;
       }
       if (added > 0) {
         CoreKeepService.Save(data);
-        if (data.MasterEnabled) CoreKeepService.StartAutoApply(data);
+        // 评审#5: 同 CoreKeepAdd_Click —— 运行中只同步规则 + 对新增条目逐条补一次应用，
+        // 不再无条件 StartAutoApply（RelaxAll/ApplyAll 两个 fire-and-forget 顺序无保证的瞬态窗口）
+        if (data.MasterEnabled) {
+          if (CoreKeepService.IsRunning) {
+            CoreKeepService.SyncRules(data);
+            foreach (var en in newEntries) CoreKeepService.ApplyToProcess(en.ProcessName, en);
+          } else CoreKeepService.StartAutoApply(data);
+        }
         RefreshCoreKeepList(data);
       }
       DialogHelper.Info(string.Format(Strings.CoreKeepBatchDone, added, skipped), Strings.CoreKeepBatchHeading);
@@ -1181,11 +1208,11 @@ namespace OmenSuperHub.Pages {
 
     static string LevelToDisplay(string lvl) {
       switch (lvl) {
-        case "soft-cpu-sets":  return "提示";
-        case "hard-affinity": return "软强制";
-        case "job-enforced":  return "硬强制";
-        case "job-locked":    return "锁定";
-        default:              return lvl;
+        case "soft-cpu-sets":  return Strings.CoreKeepBadgeHint;
+        case "hard-affinity":  return Strings.CoreKeepBadgeSoft;
+        case "job-enforced":   return Strings.CoreKeepBadgeHard;
+        case "job-locked":     return Strings.CoreKeepBadgeLocked;
+        default:               return lvl;
       }
     }
   }
@@ -1194,7 +1221,7 @@ namespace OmenSuperHub.Pages {
   public class CoreVisualView {
     public int Index { get; set; }
     public string Tooltip { get; set; }
-    public SolidColorBrush ColorBrush { get; set; }
+    public Brush ColorBrush { get; set; }
   }
 
   // ponytail: 核心选择 CheckBox 的简易 ViewModel（与 PerfPage 解耦后定义在此处）

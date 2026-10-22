@@ -12,6 +12,7 @@ namespace OmenSuperHub.Pages {
   public partial class NetworkBoostPage : Page {
     DispatcherTimer _timer;
     bool _loading;
+    bool _boostOpRunning;
 
     public NetworkBoostPage() {
       InitializeComponent();
@@ -30,29 +31,52 @@ namespace OmenSuperHub.Pages {
       // 限速值
       GlobalLimitBox.Text = ConfigService.BoostGlobalLimitKBps > 0 ? ConfigService.BoostGlobalLimitKBps.ToString() : "";
       NicLimitBox.Text = ConfigService.BoostNicLimitKBps > 0 ? ConfigService.BoostNicLimitKBps.ToString() : "";
-      GlobalLimitBox.LostFocus += (s2, e2) => SaveLimitValue();
-      NicLimitBox.LostFocus += (s2, e2) => SaveLimitValue();
+      // R15/BUG-D1: 页被 CachedPageService 缓存,每次导航都重跑 OnLoaded —— 旧代码每次
+      // Loaded 都 += 匿名 lambda(无法 -=),来回切 N 次后一次失焦触发 N+1 次 SaveLimitValue
+      // (重复注册表写)。改命名方法 + 先退订再订阅,与本文件 OnLog 的幂等写法对齐。
+      GlobalLimitBox.LostFocus -= OnLimitLostFocus;
+      GlobalLimitBox.LostFocus += OnLimitLostFocus;
+      NicLimitBox.LostFocus -= OnLimitLostFocus;
+      NicLimitBox.LostFocus += OnLimitLostFocus;
       _loading = false;
 
-      BoostService.Scan();
-      RebuildNicList();
-      UpdateStatus();
+      // ponytail: 网卡扫描(Scan 走 WMI 枚举)+ 重建列表 + 起 1s 轮询 timer 推迟到导航过渡
+      // 动画跑完之后 —— 原地跑会把 UI 线程占住,200ms 的上升动画一帧都渲染不出来(实测阻塞
+      // ~597ms)。详见 WindowHelper.RunAfterNavTransition 的采样数据。
+      WindowHelper.RunAfterNavTransition(Dispatcher, () => {
+        BoostService.Scan();
+        RebuildNicList();
+        UpdateStatus();
 
-      // ponytail: 守卫 —— 页被缓存且上次 Unloaded 未触发时旧 timer 可能仍在跑,先停再建避免叠加。
-      if (_timer != null) { _timer.Stop(); _timer = null; }
-      _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-      _timer.Tick += OnTimerTick;
-      _timer.Start();
+        // ponytail: 守卫 —— 页被缓存且上次 Unloaded 未触发时旧 timer 可能仍在跑,先停再建避免叠加。
+        if (_timer != null) { _timer.Stop(); _timer = null; }
+        _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _timer.Tick += OnTimerTick;
+        _timer.Start();
+      });
     }
 
+    void OnLimitLostFocus(object s, RoutedEventArgs e) => SaveLimitValue();
+
     void SaveLimitValue() {
-      int g = 0, n = 0;
-      int.TryParse((GlobalLimitBox.Text ?? "").Trim(), out g);
-      int.TryParse((NicLimitBox.Text ?? "").Trim(), out n);
+      // 审查修复: 溢出值(>int.MaxValue)TryParse 失败 → 静默存 0(不限速)而文本框仍显示
+      // 用户输入,显示与下发不一致。垃圾/溢出还原为当前配置;空串 = 清空不限速(合法输入)。
+      int g = ParseLimitBox(GlobalLimitBox, ConfigService.BoostGlobalLimitKBps);
+      int n = ParseLimitBox(NicLimitBox, ConfigService.BoostNicLimitKBps);
       ConfigService.BoostGlobalLimitKBps = Math.Max(0, g);
       ConfigService.BoostNicLimitKBps = Math.Max(0, n);
       ConfigService.Save("BoostGlobalLimit");
       ConfigService.Save("BoostNicLimit");
+    }
+
+    // 审查修复 #12: 升 internal static,RoutingRulesPage.SaveAll 复用 —— 溢出/垃圾输入
+    // 还原为当前值而非静默落 0(=不限速,语义相反),显示与存储保持一致。
+    internal static int ParseLimitBox(System.Windows.Controls.TextBox box, int current) {
+      string t = (box.Text ?? "").Trim();
+      if (t.Length == 0) return 0;
+      if (int.TryParse(t, out int v) && v >= 0) return v;
+      box.Text = current > 0 ? current.ToString() : "";
+      return current;
     }
 
     void OnUnloaded(object s, RoutedEventArgs e) {
@@ -94,16 +118,29 @@ namespace OmenSuperHub.Pages {
       BoostService.SetMode((string)item.Tag ?? "proxy");
     }
 
-    void StartBtn_Click(object s, RoutedEventArgs e) {
-      if (BoostService.IsRunning) {
-        BoostService.Stop();
-        UpdateStatus();
-        return;
-      }
-      string err;
-      if (!BoostService.Start(out err)) {
-        DialogHelper.Error(err);
-        return;
+    async void StartBtn_Click(object s, RoutedEventArgs e) {
+      // ponytail: BoostService.Start/Stop 在 TUN 路径含 Thread.Sleep(1500)+WaitForExit(3000)
+      // (TunManager 启动校验/route.exe 清理),同步调 UI 冻结最长 ~4.5s;挪到 Task.Run。
+      // _boostOpRunning 守卫狂点(按钮禁用期间走不到重入,双保险)。
+      if (_boostOpRunning) return;
+      _boostOpRunning = true;
+      StartBtn.IsEnabled = false;
+      try {
+        bool wasRunning = BoostService.IsEffectivelyRunning;
+        string err = "";
+        bool ok = true;
+        await System.Threading.Tasks.Task.Run(() => {
+          // 审查修复 #45: 体内抛异常原样经 await 落 DispatcherUnhandledException
+          // (App.xaml.cs:88-91)被吞并只记日志,用户以为已开启。catch 回落到下方 !ok 提示。
+          try {
+            if (wasRunning) BoostService.Stop();
+            else ok = BoostService.Start(out err);
+          } catch (Exception ex) { ok = false; err = ex.Message; }
+        });
+        if (!ok) DialogHelper.Error(err);
+      } finally {
+        StartBtn.IsEnabled = true;
+        _boostOpRunning = false;
       }
       UpdateStatus();
     }
@@ -130,7 +167,7 @@ namespace OmenSuperHub.Pages {
     void UpdateStatus() {
       if (!IsLoaded) return;
       Dispatcher.BeginInvoke(new Action(() => {
-        if (BoostService.IsRunning) {
+        if (BoostService.IsEffectivelyRunning) {
           StartBtn.Content = Strings.BoostStop;
           StatusDot.Fill = (Brush)FindResource("AccentGreenBrush");
           StatusText.Text = BoostService.IsTun ? Strings.BoostStatusTun : Strings.BoostStatusProxy;
@@ -145,8 +182,9 @@ namespace OmenSuperHub.Pages {
     void OnTimerTick(object s, EventArgs e) {
       // ponytail: RefreshTotals 是亲 UI 的只读聚合 (sums NicInfo.Down/UpMbps, 后端 ProxyEngine
       // 已经自己维护这些值);窗口关闭到托盘时刷新三个 TextBlock 是看不见的写。
-      // BoostService 代理线程独立运行,本 timer 关停不影响加速。窗口恢复下次进页 Loaded 重启。
-      if (Window.GetWindow(this)?.IsVisible != true) { _timer?.Stop(); return; }
+      // 与 DashboardPage 同款守卫:只 return 不 Stop —— Stop 之后全靠 Unloaded/Loaded 循环重启,
+      // 万一页面被缓存复用而 Loaded 未再触发,数据就永久停更。空跑一帧的代价只是一次 IsVisible 读。
+      if (Window.GetWindow(this)?.IsVisible != true) return;
       BoostService.RefreshTotals();
       TotalDownText.Text = BoostService.TotalDownMbps.ToString("F1");
       TotalUpText.Text = BoostService.TotalUpMbps.ToString("F1");
@@ -157,6 +195,14 @@ namespace OmenSuperHub.Pages {
     void OnBoostLog(string msg) {
       Dispatcher.BeginInvoke(new Action(() => {
         LogBox.AppendText("[" + DateTime.Now.ToString("HH:mm:ss") + "] " + msg + "\n");
+        // 审查修复: 长驻会话无上限追加 → 超 ~1200 行截头保留尾部 600 行,内存有界。
+        if (LogBox.LineCount > 1200) {
+          var tail = new System.Text.StringBuilder();
+          for (int i = LogBox.LineCount - 600; i < LogBox.LineCount; i++)
+            tail.Append(LogBox.GetLineText(i)).Append('\n');
+          LogBox.Clear();
+          LogBox.AppendText(tail.ToString());
+        }
         LogBox.ScrollToEnd();
       }));
     }

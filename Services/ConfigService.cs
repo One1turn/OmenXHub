@@ -29,6 +29,13 @@ namespace OmenSuperHub.Services {
     public static string FanTable = "silent";
     public static string FanMode = "performance";
     public static string FanControl = "auto";
+    // ponytail: IR 参与风扇曲线 max(cpu,gpu,ir) — 官方三路算法(docs/OMEN_OFFICIAL_FAN_ALGORITHM.md)。
+    // 默认关:IR 是红外辐射温度,读数口径与 CPU/GPU 核心温不同,显式开启才改变现有风扇行为。
+    public static bool UseIrForFanCurve = false;
+    // ponytail: 空闲压低风扇(官方 IDLE_AUTO / EWMA idle 语义,默认关)—— CPU/GPU 占用低时:
+    // 预设档(GetFanSpeedForTemperature)直接降至曲线最低档;自定义/smart(GetSmartFanSpeed)
+    // 压平 smart 层 EMA 系数到 0.1。一个开关统管两条路径,用户显式开启才改变现有行为。
+    public static bool SmartFanIdleLambda = false;
     public static string TempSensitivity = "medium";
     public static string CpuPower = "max";
     public static string GpuPower = "max";
@@ -70,10 +77,12 @@ namespace OmenSuperHub.Services {
     // ponytail: 用户在灯光页选"使用官方灯效软件"时持久化本标志 — 隐藏侧栏灯光项 + 启动 Replay 早退。
     // 与 LightingTempMode 同款 int↔bool 持久化范式, 不引入新机制。
     public static bool LightingUseOfficial = false;
-    // ponytail: 高级硬件访问(EC/SMU 直写) — 默认关闭,需用户主动开启。
-    // 写错 EC/SMU 寄存器可能系统不稳定,故不自动启用,仅用户在设置页知情后开启。
+    // ponytail: 高级硬件访问(EC/SMU 直写) — OMEN 机型默认关,需用户主动开启(写错 EC/SMU
+    // 寄存器可能系统不稳定);光影系列(Victus/Pavilion Gaming)默认开 —— 其 WMI 0x29 功率墙
+    // 路径不可靠(docs/MEMORY_POWER_THERMAL_DIAGNOSTICS.md:"WMI 返回成功 ≠ 实际生效"),
+    // RAPL 直写更可信,默认值探测见 Load()。
+    // 门控点:RaplPowerLimitService.ShouldHandlePowerLimit(功耗墙直写)。
     public static bool EnableEcAccess = false;
-    public static string LightingColor = "Red";
     public static string LightingAnimation = "None";
     // ponytail: Direction/Theme only meaningful under Dojo anim — see docs/lighting-reverse-findings.md
     public static string LightingDirection = "Left";
@@ -128,8 +137,16 @@ namespace OmenSuperHub.Services {
     public static string AccentColorSource = "system";
     public static string AccentColor = "#FFFFFFFF";
     public static bool Topmost = true;
+    // ponytail: 主窗口几何记忆 —— 用户调过的尺寸/位置/最大化状态下次启动还原。
+    // 0 = 未保存过(走默认 1150×750 居中)。double 存 DIP,与 WPF 坐标同单位。
+    public static double WinLeft, WinTop, WinWidth, WinHeight;
+    public static bool WinMaximized;
     public static bool ShowOsd = true;
-    public static string OsdPosition = "bottomCenter";
+    // ponytail: 按类型关闭 OSD —— 逗号分隔的 kind 列表(见 OsdWindow.Kind*)。空 = 全部开启。
+    // 取代旧的单一 LockKeyOsd 布尔(issue #33 只覆盖锁定键),现在 8 类提示各自可关。
+    // 存字符串而非 8 个 bool: 新增类型不用再加注册表键,老键 LockKeyOsd 在 Load 时一次性迁移。
+    public static string OsdMutedKinds = "";
+    public static string OsdPosition = "bottomRight";
     public static bool TrayHoverPopup = true;
     public static bool EcoQosEnabled = false;
     public static bool EcoQosThrottlePlugged = false;
@@ -141,6 +158,11 @@ namespace OmenSuperHub.Services {
     public static bool HWiNFOEnabled = false;
     public static bool HWiNFOReadEnabled = false;    // 从 HWiNFO64 读取传感器数据
     public static bool HttpApiEnabled = false;
+    // ponytail: LAN 监听是安全边界,默认关闭 —— 关时不改绑定(仍 localhost),零回归。
+    public static bool LanAccessEnabled = false;
+    // 令牌: 持久化模式下存注册表(重启不变,客户端只配一次);空串=下次 Start 生成。
+    public static string HttpApiToken = "";
+    public static bool HttpApiPersistentToken = true;
     // ponytail: 新装/从未碰过这两项开关的用户,默认关闭总开关、App 不 Start 后端
     // (自动化 = WMI Win32_ProcessStartTrace watcher + 系统事件订阅 + 全局热键注册;
     //  宏 = 全局低级键盘钩子 SetWindowsHookEx WH_KEYBOARD_LL — 装上即兜得住所有
@@ -164,11 +186,9 @@ namespace OmenSuperHub.Services {
     // ponytail: AMD 分核 Curve Optimizer 偏移。格式 "core:offset,core:offset"(如 "0:-10,2:-15")。
     // 空串=未设置。全局设置,不随预设切换重置。SMU 写易失,预设切换时重应用。
     public static string AmdCpuPerCoreOffsets = "";
-    // ponytail: Intel 混合架构(8P+8E)每核倍频 + 电压偏移。格式 "core:ratio,core:ratio"(core 0..15,
-    // 前 8= P-core 写 MSR 0x1AD,后 8= E-core 写 0x1AE),空串=未设置。与 AmdCpuPerCoreOffsets
-    // 同为全局易失设置(MSR 写重启清零),PresetManager 重应用。电压 mV,0=未设置。
-    public static string IntelPerCoreRatios = "";
-    public static int IntelVoltageOffset = 0;
+    // ponytail: Intel 倍频/电压/功耗平衡配置已随超频功能移至 feature/intel-ring0-oc 分支。
+    // 硬件预取器禁用掩码（MSR 0x1A4 低 4 位，bit0=L2HW bit1=邻行 bit2=DCU bit3=DCU-IP；0=全开默认）
+    public static int IntelPrefetcherMask = 0;
     // ponytail: 仅 PPT 一组保留走 WMI；TDC/EDC/Tctl 三组已随高级调教删除（依赖 SMU 服务，本机不可用）。
     // ponytail: 首次启动默认开启风扇一致性 (CPU/GPU 同转速); 用户在 FanPage 关掉后
     // RegBool 会读到 false 并保留 — 默认 true 仅在注册表无 FanSync 键时生效 (新安装/首次运行)。
@@ -234,6 +254,7 @@ namespace OmenSuperHub.Services {
           if (string.IsNullOrEmpty(setting)) {
             key.SetValue("Preset", Preset);
             key.SetValue("ShowOsd", ShowOsd);
+            key.SetValue("OsdMutedKinds", OsdMutedKinds ?? "");
             key.SetValue("Topmost", Topmost);
             key.SetValue("SysManufacturer", SysManufacturer);
             key.SetValue("SysModel", SysModel);
@@ -252,7 +273,7 @@ namespace OmenSuperHub.Services {
             key.SetValue("SysPawnIoText", SysPawnIoText);
             key.SetValue("CustomLogoPath", CustomLogoPath);
             key.SetValue("CustomBgPath", CustomBgPath);
-            key.SetValue("CustomBgOpacity", CustomBgOpacity);
+            key.SetValue("CustomBgOpacity", CustomBgOpacity.ToString(System.Globalization.CultureInfo.InvariantCulture));
             key.SetValue("CustomBgBlurEnabled", CustomBgBlurEnabled ? 1 : 0);
             return;
           }
@@ -260,6 +281,8 @@ namespace OmenSuperHub.Services {
             case "FanTable": key.SetValue("FanTable", FanTable); break;
             case "FanMode": key.SetValue("FanMode", FanMode); break;
             case "FanControl": key.SetValue("FanControl", FanControl); break;
+            case "UseIrForFanCurve": key.SetValue("UseIrForFanCurve", UseIrForFanCurve ? 1 : 0); break;
+            case "SmartFanIdleLambda": key.SetValue("SmartFanIdleLambda", SmartFanIdleLambda ? 1 : 0); break;
             case "TempSensitivity": key.SetValue("TempSensitivity", TempSensitivity); break;
             case "CpuPower": key.SetValue("CpuPower", CpuPower); break;
             case "GpuPower": key.SetValue("GpuPower", GpuPower); break;
@@ -283,8 +306,8 @@ namespace OmenSuperHub.Services {
             case "SelectedGpu": key.SetValue("SelectedGpu", SelectedGpu ?? ""); break;
             case "FloatingBarLayout": key.SetValue("FloatingBarLayout", FloatingBarLayout); break;
             case "FloatingBar": key.SetValue("FloatingBar", FloatingBar); break;
-            case "FloatingPosLeft": key.SetValue("FloatingPosLeft", FloatingPosLeft); break;
-            case "FloatingPosTop": key.SetValue("FloatingPosTop", FloatingPosTop); break;
+            case "FloatingPosLeft": key.SetValue("FloatingPosLeft", FloatingPosLeft.ToString(System.Globalization.CultureInfo.InvariantCulture)); break;
+            case "FloatingPosTop": key.SetValue("FloatingPosTop", FloatingPosTop.ToString(System.Globalization.CultureInfo.InvariantCulture)); break;
             case "MonitorCPU": key.SetValue("MonitorCPU", MonitorCPU); break;
             case "Preset": key.SetValue("Preset", Preset); break;
             case "Language": key.SetValue("Language", Language); break;
@@ -295,7 +318,6 @@ namespace OmenSuperHub.Services {
             case "LightingTempMode": key.SetValue("LightingTempMode", LightingTempMode ? 1 : 0); break;
             case "LightingUseOfficial": key.SetValue("LightingUseOfficial", LightingUseOfficial ? 1 : 0); break;
             case "EnableEcAccess": key.SetValue("EnableEcAccess", EnableEcAccess ? 1 : 0); break;
-            case "LightingColor": key.SetValue("LightingColor", LightingColor); break;
             case "LightingAnimation": key.SetValue("LightingAnimation", LightingAnimation); break;
             case "LightingDirection": key.SetValue("LightingDirection", LightingDirection); break;
             case "LightingTheme": key.SetValue("LightingTheme", LightingTheme); break;
@@ -314,7 +336,7 @@ namespace OmenSuperHub.Services {
             case "CustomPreset1Name": key.SetValue("CustomPreset1Name", CustomPreset1Name); break;
             case "CustomPreset2Name": key.SetValue("CustomPreset2Name", CustomPreset2Name); break;
             case "CustomPreset3Name": key.SetValue("CustomPreset3Name", CustomPreset3Name); break;
-            case "FloatingTextOpacity": key.SetValue("FloatingTextOpacity", FloatingTextOpacity); break;
+            case "FloatingTextOpacity": key.SetValue("FloatingTextOpacity", FloatingTextOpacity.ToString(System.Globalization.CultureInfo.InvariantCulture)); break;
             case "VerboseLogging": key.SetValue("VerboseLogging", VerboseLogging); break;
             case "HeteroCpuSmallMask": key.SetValue("HeteroCpuSmallMask", HeteroCpuSmallMask); break;
             case "HeteroCpuDefaultPolicy": key.SetValue("HeteroCpuDefaultPolicy", HeteroCpuDefaultPolicy); break;
@@ -340,6 +362,9 @@ namespace OmenSuperHub.Services {
             case "HWiNFOEnabled": key.SetValue("HWiNFOEnabled", HWiNFOEnabled); break;
             case "HWiNFOReadEnabled": key.SetValue("HWiNFOReadEnabled", HWiNFOReadEnabled); break;
             case "HttpApiEnabled": key.SetValue("HttpApiEnabled", HttpApiEnabled); break;
+            case "LanAccessEnabled": key.SetValue("LanAccessEnabled", LanAccessEnabled); break;
+            case "HttpApiToken": key.SetValue("HttpApiToken", HttpApiToken ?? ""); break;
+            case "HttpApiPersistentToken": key.SetValue("HttpApiPersistentToken", HttpApiPersistentToken); break;
             case "AutomationEnabled": key.SetValue("AutomationEnabled", AutomationEnabled); break;
             case "MacroEnabled": key.SetValue("MacroEnabled", MacroEnabled); break;
             case "DebugShowAllUi": key.SetValue("DebugShowAllUi", DebugShowAllUi ? 1 : 0); break;
@@ -347,22 +372,30 @@ namespace OmenSuperHub.Services {
             case "AmdCpuPpt": key.SetValue("AmdCpuPpt", AmdCpuPpt); break;
             case "AmdCpuUndervolt": key.SetValue("AmdCpuUndervolt", AmdCpuUndervolt); break;
             case "AmdCpuPerCoreOffsets": key.SetValue("AmdCpuPerCoreOffsets", AmdCpuPerCoreOffsets ?? ""); break;
-            case "IntelPerCoreRatios": key.SetValue("IntelPerCoreRatios", IntelPerCoreRatios ?? ""); break;
-            case "IntelVoltageOffset": key.SetValue("IntelVoltageOffset", IntelVoltageOffset); break;
+            case "IntelPrefetcherMask": key.SetValue("IntelPrefetcherMask", IntelPrefetcherMask); break;
             case "AmdCpuPowerMasterEnabled": key.SetValue("AmdCpuPowerMasterEnabled", AmdCpuPowerMasterEnabled); break;
             case "FanSync": key.SetValue("FanSync", FanSync); break;
             // ponytail: SmartFanEmaAlpha/StepDown/Hysteresis 不再走注册表，
             // 改为按预设持久化到 FanCurves/custom_<preset>_smart.txt (见 FanService)。
             // 字段仍保留作为运行时缓存，由 FanPage 在 LoadConfigState/切换预设时写回。
             case "ShowOsd": key.SetValue("ShowOsd", ShowOsd); break;
+            case "OsdMutedKinds": key.SetValue("OsdMutedKinds", OsdMutedKinds ?? ""); break;
             case "OsdPosition": key.SetValue("OsdPosition", OsdPosition); break;
             case "TrayHoverPopup": key.SetValue("TrayHoverPopup", TrayHoverPopup ? 1 : 0); break;
             case "Topmost": key.SetValue("Topmost", Topmost); break;
+            // ponytail: 窗口几何 —— 一次 Save("WindowPlacement") 批量落盘, 见 SaveWindowPlacement()
+            case "WindowPlacement":
+              key.SetValue("WinLeft", WinLeft);
+              key.SetValue("WinTop", WinTop);
+              key.SetValue("WinWidth", WinWidth);
+              key.SetValue("WinHeight", WinHeight);
+              key.SetValue("WinMaximized", WinMaximized ? 1 : 0);
+              break;
             case "EcoQosWhitelist": key.SetValue("EcoQosWhitelist", EcoQosWhitelist); break;
             case "EcoQosBlacklist": key.SetValue("EcoQosBlacklist", EcoQosBlacklist); break;
             case "CustomLogoPath": key.SetValue("CustomLogoPath", CustomLogoPath); break;
             case "CustomBgPath": key.SetValue("CustomBgPath", CustomBgPath); break;
-            case "CustomBgOpacity": key.SetValue("CustomBgOpacity", CustomBgOpacity); break;
+            case "CustomBgOpacity": key.SetValue("CustomBgOpacity", CustomBgOpacity.ToString(System.Globalization.CultureInfo.InvariantCulture)); break;
             case "CustomBgBlurEnabled": key.SetValue("CustomBgBlurEnabled", CustomBgBlurEnabled ? 1 : 0); break;
             case "Resolution": key.SetValue("Resolution", Resolution); break;
             case "DpiScale": key.SetValue("DpiScale", DpiScale); break;
@@ -411,55 +444,8 @@ namespace OmenSuperHub.Services {
       }
     }
 
-    public static void LoadPresetFromRegistry(string presetKey) {
-      try {
-        using (RegistryKey key = Registry.CurrentUser.OpenSubKey(PresetSubKey(presetKey))) {
-          if (key == null) return;
-          FanTable = (string)key.GetValue("FanTable", FanTable);
-          FanControl = (string)key.GetValue("FanControl", FanControl);
-          TempSensitivity = (string)key.GetValue("TempSensitivity", TempSensitivity);
-          CpuPower = (string)key.GetValue("CpuPower", CpuPower);
-          TgpEnabled = Convert.ToBoolean(key.GetValue("TgpEnabled", TgpEnabled));
-          PpabEnabled = Convert.ToBoolean(key.GetValue("PpabEnabled", PpabEnabled));
-          DState = (int)key.GetValue("DState", DState);
-          GpuClock = (int)key.GetValue("GpuClock", GpuClock);
-          Tpp = (int)key.GetValue("Tpp", Tpp);
-          AmdCpuPpt = (int)key.GetValue("AmdCpuPpt", AmdCpuPpt);
-          // ponytail: AmdCpuUndervolt 是全局设置(同 EnableEcAccess),不从预设子键加载
-          DisplayMode = (string)key.GetValue("DisplayMode", DisplayMode);
-          MaxFrameRate = (int)key.GetValue("MaxFrameRate", MaxFrameRate);
-          RefreshRate = (int)key.GetValue("RefreshRate", RefreshRate);
-          PowerPlanGuid = (string)key.GetValue("PowerPlanGuid", PowerPlanGuid);
-          PowerMode = (int)key.GetValue("PowerMode", PowerMode);
-          MonitorGPU = Convert.ToBoolean(key.GetValue("MonitorGPU", MonitorGPU));
-          MonitorFan = Convert.ToBoolean(key.GetValue("MonitorFan", MonitorFan));
-          MonitorMemory = Convert.ToBoolean(key.GetValue("MonitorMemory", MonitorMemory));
-          MonitorNetwork = Convert.ToBoolean(key.GetValue("MonitorNetwork", MonitorNetwork));
-          MonitorFPS = Convert.ToBoolean(key.GetValue("MonitorFPS", MonitorFPS));
-          MonitorCPU = Convert.ToBoolean(key.GetValue("MonitorCPU", MonitorCPU));
-          AutoFanProtect = (string)key.GetValue("AutoFanProtect", AutoFanProtect);
-          LightingDevice = (string)key.GetValue("LightingDevice", LightingDevice);
-          LightingInterface = (string)key.GetValue("LightingInterface", LightingInterface);
-          LightingBrightness = (byte)(int)key.GetValue("LightingBrightness", LightingBrightness);
-          LightingTempMode = (int)key.GetValue("LightingTempMode", 0) == 1;
-          // ponytail: EnableEcAccess 是全局设置,不从预设子键加载 — 否则切换到无此键的预设会重置为 false。
-          LightingColor = (string)key.GetValue("LightingColor", LightingColor);
-          LightingAnimation = (string)key.GetValue("LightingAnimation", LightingAnimation);
-          LightingDirection = (string)key.GetValue("LightingDirection", LightingDirection);
-          LightingTheme = (string)key.GetValue("LightingTheme", LightingTheme);
-          PerKeyStaticColor = (string)key.GetValue("PerKeyStaticColor", PerKeyStaticColor);
-          PerKeyAnimation = (string)key.GetValue("PerKeyAnimation", PerKeyAnimation);
-          PerKeyBrightness = (byte)(int)key.GetValue("PerKeyBrightness", PerKeyBrightness);
-          PerKeySpeed = (byte)(int)key.GetValue("PerKeySpeed", PerKeySpeed);
-          string savedName = (string)key.GetValue("CustomPresetName", null);
-          if (savedName != null) {
-            if (presetKey == "Custom1") CustomPreset1Name = savedName;
-            else if (presetKey == "Custom2") CustomPreset2Name = savedName;
-            else if (presetKey == "Custom3") CustomPreset3Name = savedName;
-          }
-        }
-      } catch { }
-    }
+    // (LoadPresetFromRegistry 已删除: 全仓零调用方的死代码,且它读取的 LightingTempMode
+    //  预设键从未被 SavePresetToRegistry 写入 —— 真被调用会每次切预设静默重置温控灯效。)
 
     // ponytail: thin writer that records only the per-preset fan-mode fields.
     // Used by FanPage RPM slider/combo changes so a user's manual RPM on a
@@ -513,7 +499,6 @@ namespace OmenSuperHub.Services {
           key.SetValue("LightingDevice", LightingDevice);
           key.SetValue("LightingInterface", LightingInterface);
           key.SetValue("LightingBrightness", LightingBrightness);
-          key.SetValue("LightingColor", LightingColor);
           key.SetValue("LightingAnimation", LightingAnimation);
           key.SetValue("LightingDirection", LightingDirection);
           key.SetValue("LightingTheme", LightingTheme);
@@ -534,30 +519,39 @@ namespace OmenSuperHub.Services {
     // ═══════════════════════════════════════════════════════
     // Load Configuration (reads values only, does not apply)
     // ═══════════════════════════════════════════════════════
-    static int RegInt(Microsoft.Win32.RegistryKey key, string name, int def) {
+    internal static int RegInt(Microsoft.Win32.RegistryKey key, string name, int def) {
       try { return Convert.ToInt32(key.GetValue(name, def)); } catch { return def; }
     }
-    static string RegStr(Microsoft.Win32.RegistryKey key, string name, string def) {
+    internal static string RegStr(Microsoft.Win32.RegistryKey key, string name, string def) {
       try { return (string)key.GetValue(name, def) ?? def; } catch { return def; }
     }
-    static bool RegBool(Microsoft.Win32.RegistryKey key, string name, bool def) {
+    internal static bool RegBool(Microsoft.Win32.RegistryKey key, string name, bool def) {
       try { return Convert.ToBoolean(key.GetValue(name, def ? 1 : 0)); } catch { return def; }
     }
-    static double RegDouble(Microsoft.Win32.RegistryKey key, string name, double def) {
-      try { return Convert.ToDouble(key.GetValue(name, def)); } catch { return def; }
+    internal static double RegDouble(Microsoft.Win32.RegistryKey key, string name, double def) {
+      // ponytail: invariant 解析与 Save 侧的 invariant 写入配对(旧实现写读都走当前区域,
+      // 区域变更后小数位解析失败回退默认值,坐标一次性重置 —— 可接受的一次性代价)。
+      try { return Convert.ToDouble(key.GetValue(name, def), System.Globalization.CultureInfo.InvariantCulture); } catch { return def; }
     }
-    static byte RegByte(Microsoft.Win32.RegistryKey key, string name, byte def) {
+    internal static byte RegByte(Microsoft.Win32.RegistryKey key, string name, byte def) {
       try { return Convert.ToByte(key.GetValue(name, (int)def)); } catch { return def; }
     }
 
     public static void Load() {
       try {
         using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RegistryPath)) {
-          if (key == null) return;
+          if (key == null) {
+            // ponytail: 全新安装首启无配置键,其余字段走静态默认;EnableEcAccess 的默认
+            // 依赖机型,这里也探测一次(有缓存,进程内至多一次 WMI 查询)。
+            EnableEcAccess = OmenHardware.IsVictusModel();
+            return;
+          }
 
           FanTable = RegStr(key, "FanTable", "silent");
           FanMode = RegStr(key, "FanMode", "performance");
           FanControl = RegStr(key, "FanControl", "auto");
+          UseIrForFanCurve = RegInt(key, "UseIrForFanCurve", 0) != 0;
+          SmartFanIdleLambda = RegInt(key, "SmartFanIdleLambda", 0) != 0;
           TempSensitivity = RegStr(key, "TempSensitivity", "medium");
           CpuPower = RegStr(key, "CpuPower", "max");
           GpuPower = RegStr(key, "GpuPower", "max");
@@ -589,14 +583,17 @@ namespace OmenSuperHub.Services {
           LightingDevice = RegStr(key, "LightingDevice", "keyboard");
           LightingInterface = RegStr(key, "LightingInterface", "BasicFourZone");
           LightingBrightness = RegByte(key, "LightingBrightness", 100);
-          LightingColor = RegStr(key, "LightingColor", "Red");
           LightingAnimation = RegStr(key, "LightingAnimation", "None");
           LightingDirection = RegStr(key, "LightingDirection", "Left");
           LightingTheme = RegStr(key, "LightingTheme", "Custom");
           LightingUseOfficial = RegInt(key, "LightingUseOfficial", 0) != 0;
+          // ponytail: 这两个字段原先只存不读(Save case 318/327 有,Load 漏)—— 重启后
+          // 温度联动灯效回到关、逐键速度回到 1,用户设置静默丢失。2026-10-22 审查补。
+          LightingTempMode = RegInt(key, "LightingTempMode", 0) != 0;
           PerKeyStaticColor = RegStr(key, "PerKeyStaticColor", "Red");
           PerKeyAnimation = RegStr(key, "PerKeyAnimation", "None");
           PerKeyBrightness = RegByte(key, "PerKeyBrightness", 100);
+          PerKeySpeed = RegByte(key, "PerKeySpeed", 1);
           DisplayMode = RegStr(key, "DisplayMode", "smoothed");
           MonRefreshInterval = RegInt(key, "MonRefreshInterval", 1000);
           IccMax = RegInt(key, "IccMax", 0);
@@ -631,14 +628,29 @@ namespace OmenSuperHub.Services {
           AccentColorSource = RegStr(key, "AccentColorSource", "system");
           AccentColor = RegStr(key, "AccentColor", "#FFFFFFFF");
           Topmost = RegBool(key, "Topmost", true);
+          WinLeft = RegDouble(key, "WinLeft", 0);
+          WinTop = RegDouble(key, "WinTop", 0);
+          WinWidth = RegDouble(key, "WinWidth", 0);
+          WinHeight = RegDouble(key, "WinHeight", 0);
+          WinMaximized = RegBool(key, "WinMaximized", false);
           ShowOsd = RegBool(key, "ShowOsd", true);
-          OsdPosition = RegStr(key, "OsdPosition", "bottomCenter");
+          // ponytail: 老键 LockKeyOsd 迁移 —— 只在 OsdMutedKinds 从未写过时读一次,
+          // 用户旧配置里关掉的锁定键提示不会因为升级而复活。
+          OsdMutedKinds = RegStr(key, "OsdMutedKinds", null);
+          if (OsdMutedKinds == null) {
+            OsdMutedKinds = RegBool(key, "LockKeyOsd", true) ? "" : "lockKey";
+            try { Save("OsdMutedKinds"); } catch { }
+          }
+          OsdPosition = RegStr(key, "OsdPosition", "bottomRight");
           TrayHoverPopup = RegInt(key, "TrayHoverPopup", 1) == 1;
           EcoQosEnabled = RegBool(key, "EcoQosEnabled", false);
           EcoQosThrottlePlugged = RegBool(key, "EcoQosThrottlePlugged", false);
           HWiNFOEnabled = RegBool(key, "HWiNFOEnabled", false);
           HWiNFOReadEnabled = RegBool(key, "HWiNFOReadEnabled", false);
           HttpApiEnabled = RegBool(key, "HttpApiEnabled", false);
+          LanAccessEnabled = RegBool(key, "LanAccessEnabled", false);
+          HttpApiToken = RegStr(key, "HttpApiToken", "");
+          HttpApiPersistentToken = RegBool(key, "HttpApiPersistentToken", true);
           AutomationEnabled = RegBool(key, "AutomationEnabled", false);
           MacroEnabled = RegBool(key, "MacroEnabled", false);
           DebugShowAllUi = RegInt(key, "DebugShowAllUi", 0) != 0;
@@ -646,8 +658,14 @@ namespace OmenSuperHub.Services {
             AmdCpuPpt = RegInt(key, "AmdCpuPpt", 0);
             AmdCpuUndervolt = RegInt(key, "AmdCpuUndervolt", 0);
             AmdCpuPerCoreOffsets = RegStr(key, "AmdCpuPerCoreOffsets", "");
-            IntelPerCoreRatios = RegStr(key, "IntelPerCoreRatios", "");
-            IntelVoltageOffset = RegInt(key, "IntelVoltageOffset", 0);
+            // ponytail: EnableEcAccess 此前只存不读 — 重启后回显关闭且 RAPL 功耗墙直写
+            // (ShouldHandlePowerLimit)静默失效回落 WMI。补读回。
+            // 默认值按机型:光影(Victus/Pavilion Gaming)默认开,其余默认关。注册表已有值
+            // (用户显式选过或已落盘)直接读回、不探测机型 —— 老用户零 WMI 开销。
+            EnableEcAccess = key.GetValue("EnableEcAccess") != null
+                ? RegBool(key, "EnableEcAccess", false)
+                : OmenHardware.IsVictusModel();
+            IntelPrefetcherMask = RegInt(key, "IntelPrefetcherMask", 0) & 0xF;
             AmdCpuPowerMasterEnabled = RegBool(key, "AmdCpuPowerMasterEnabled", true);
             FanSync = RegBool(key, "FanSync", true);
             // ponytail: smart 参数不再从注册表读，由 FanPage 从 FanCurves/custom_<preset>_smart.txt 加载后写回
@@ -714,13 +732,15 @@ namespace OmenSuperHub.Services {
       return presetKey;
     }
 
-    public static void SetCustomPresetName(string presetKey, string displayName) {
-      if (string.IsNullOrEmpty(presetKey) || string.IsNullOrEmpty(displayName)) return;
+    // ponytail: 返回 false = 持久化失败(内存已更新,重启后名字回退)。UI 调用方
+    // (DashboardPage 重命名)据此提示;导入路径(PresetManager)可忽略返回值。
+    public static bool SetCustomPresetName(string presetKey, string displayName) {
+      if (string.IsNullOrEmpty(presetKey) || string.IsNullOrEmpty(displayName)) return false;
       CustomPresetNames[presetKey] = displayName;
       if (presetKey == "Custom1") CustomPreset1Name = displayName;
       else if (presetKey == "Custom2") CustomPreset2Name = displayName;
       else if (presetKey == "Custom3") CustomPreset3Name = displayName;
-      try { CustomPresetNamesStore.Save(); } catch { }
+      return CustomPresetNamesStore.Save();   // Save 内部已 Logger.Error,不抛
     }
   }
 
@@ -752,7 +772,7 @@ namespace OmenSuperHub.Services {
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
         "OmenXHub", "preset_names.txt");
 
-    public static void Save() {
+    public static bool Save() {
       try {
         var dir = System.IO.Path.GetDirectoryName(FilePath);
         if (!System.IO.Directory.Exists(dir)) System.IO.Directory.CreateDirectory(dir);
@@ -768,7 +788,8 @@ namespace OmenSuperHub.Services {
         sb.AppendLine(ConfigService.CustomPreset3Name);  // legacy line 3
         foreach (var l in lines) sb.AppendLine(l);
         System.IO.File.WriteAllText(FilePath, sb.ToString().TrimEnd());
-      } catch (Exception ex) { Logger.Error("CustomPresetNamesStore.Save: " + ex.Message); }
+        return true;
+      } catch (Exception ex) { Logger.Error("CustomPresetNamesStore.Save: " + ex.Message); return false; }
     }
 
     public static void Load() {

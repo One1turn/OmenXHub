@@ -4,9 +4,9 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:app="clr-namespace:OmenSuperHub"
       Title="{x:Static app:Strings.PageSettings}">
-<ScrollViewer VerticalScrollBarVisibility="Auto" PanningMode="VerticalOnly">
-    <StackPanel Margin="24,20" TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
-      <TextBlock x:Name="HeadingSettings" Text="{x:Static app:Strings.PageSettings}" FontSize="22" FontWeight="Bold" Margin="0,0,0,16"/>
+<ScrollViewer Style="{DynamicResource OmenScrollViewer}" VerticalScrollBarVisibility="Auto" PanningMode="VerticalOnly">
+    <StackPanel Margin="{DynamicResource PageMargin}" TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
+      <TextBlock x:Name="HeadingSettings" Text="{x:Static app:Strings.PageSettings}" FontSize="{DynamicResource FontSizePageTitle}" FontWeight="Medium" Margin="0,0,0,16"/>
 
       <!-- ══════ 浮窗设置 ══════ -->
       <TextBlock Text="{x:Static app:Strings.SettingsFloatingHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,0,0,8"/>
@@ -22,8 +22,8 @@
                 <ColumnDefinition Width="Auto"/>
               </Grid.ColumnDefinitions>
               <StackPanel Orientation="Horizontal">
-                <ui:SymbolIcon Symbol="Window24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBlock Text="{x:Static app:Strings.FloatingHeading}" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <ui:SymbolIcon Symbol="Window24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock Text="{x:Static app:Strings.FloatingHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
               </StackPanel>
               <ui:ToggleSwitch x:Name="FloatingToggle" Grid.Column="1" VerticalAlignment="Center"
                               Checked="FloatingToggle_Changed" Unchecked="FloatingToggle_Changed"/>
@@ -126,8 +126,8 @@
                 <ColumnDefinition Width="Auto"/>
               </Grid.ColumnDefinitions>
               <StackPanel Orientation="Horizontal">
-                <ui:SymbolIcon Symbol="Keyboard24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBlock Text="{x:Static app:Strings.OmenKeyHeading}" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <ui:SymbolIcon Symbol="Keyboard24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock Text="{x:Static app:Strings.OmenKeyHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
               </StackPanel>
               <ComboBox x:Name="OmenKeyCombo" Grid.Column="1" MinWidth="{StaticResource ComboMinWidth}"
                         SelectionChanged="OmenKey_SelectionChanged">
@@ -187,8 +187,8 @@
               </Grid.ColumnDefinitions>
               <StackPanel>
                 <StackPanel Orientation="Horizontal">
-                  <ui:SymbolIcon Symbol="Window24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                  <TextBlock Text="{x:Static app:Strings.SettingsSimpleModeHeading}" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                  <ui:SymbolIcon Symbol="Window24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                  <TextBlock Text="{x:Static app:Strings.SettingsSimpleModeHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                 </StackPanel>
                 <TextBlock Text="{x:Static app:Strings.SettingsSimpleModeDesc}" FontSize="{DynamicResource FontSizeCaption}"
                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0"/>
@@ -218,10 +218,10 @@
         <ui:CardControl.Header>
           <StackPanel>
             <StackPanel Orientation="Horizontal">
-              <ui:SymbolIcon Symbol="Temperature24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-              <TextBlock Text="{x:Static app:Strings.ExtraTempSensorsHeading}" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+              <ui:SymbolIcon Symbol="Temperature24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+              <TextBlock Text="{x:Static app:Strings.ExtraTempSensorsHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
             </StackPanel>
-            <TextBlock Text='勾选要在 Dashboard 传感器温度卡显示的额外项;读不到的会显 "-"'
+            <TextBlock Text="{x:Static app:Strings.ExtraTempSensorsDesc}"
                        FontSize="{DynamicResource FontSizeCaption}"
                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" TextWrapping="Wrap"/>
             <WrapPanel x:Name="ExtraTempSensorPanel" Margin="0,8,0,0"/>
@@ -239,8 +239,8 @@
             </Grid.ColumnDefinitions>
             <StackPanel>
               <StackPanel Orientation="Horizontal">
-                <ui:SymbolIcon Symbol="DeviceEq24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBlock Text="{x:Static app:Strings.GpuSelectorHeading}" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <ui:SymbolIcon Symbol="DeviceEq24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock Text="{x:Static app:Strings.GpuSelectorHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
               </StackPanel>
               <TextBlock Text="{x:Static app:Strings.GpuSelectorDesc}" FontSize="{DynamicResource FontSizeCaption}"
                          Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" TextWrapping="Wrap"/>
@@ -261,8 +261,8 @@
             </Grid.ColumnDefinitions>
             <StackPanel>
               <StackPanel Orientation="Horizontal">
-                <ui:SymbolIcon Symbol="CursorHover24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBlock Text="{x:Static app:Strings.TrayHoverPopupHeading}" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <ui:SymbolIcon Symbol="CursorHover24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock Text="{x:Static app:Strings.TrayHoverPopupHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
               </StackPanel>
               <TextBlock Text="{x:Static app:Strings.TrayHoverPopupDesc}" FontSize="{DynamicResource FontSizeCaption}"
                          Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0"/>
@@ -285,8 +285,8 @@
               </Grid.ColumnDefinitions>
               <StackPanel>
                 <StackPanel Orientation="Horizontal">
-                  <ui:SymbolIcon Symbol="Chat24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                  <TextBlock Text="{x:Static app:Strings.SettingsOsdHeading}" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                  <ui:SymbolIcon Symbol="Chat24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                  <TextBlock Text="{x:Static app:Strings.SettingsOsdHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                 </StackPanel>
                 <TextBlock Text="{x:Static app:Strings.OsdToggleDesc}" FontSize="{DynamicResource FontSizeCaption}"
                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0"/>
@@ -303,13 +303,27 @@
               <TextBlock Text="{x:Static app:Strings.OsdPositionHeading}" FontSize="{DynamicResource FontSizeBody}" VerticalAlignment="Center"/>
               <ComboBox x:Name="OsdPositionCombo" Grid.Column="1" MinWidth="{StaticResource ComboMinWidth}"
                         SelectionChanged="OsdPosition_SelectionChanged">
-                <ComboBoxItem Content="{x:Static app:Strings.OsdPosBottomCenter}"/>
-                <ComboBoxItem Content="{x:Static app:Strings.OsdPosTopLeft}"/>
-                <ComboBoxItem Content="{x:Static app:Strings.OsdPosTopRight}"/>
-                <ComboBoxItem Content="{x:Static app:Strings.OsdPosTopCenter}"/>
-                <ComboBoxItem Content="{x:Static app:Strings.OsdPosBottomLeft}"/>
                 <ComboBoxItem Content="{x:Static app:Strings.OsdPosBottomRight}"/>
+                <ComboBoxItem Content="{x:Static app:Strings.OsdPosBottomCenter}"/>
+                <ComboBoxItem Content="{x:Static app:Strings.OsdPosBottomLeft}"/>
+                <ComboBoxItem Content="{x:Static app:Strings.OsdPosTopLeft}"/>
+                <ComboBoxItem Content="{x:Static app:Strings.OsdPosTopCenter}"/>
+                <ComboBoxItem Content="{x:Static app:Strings.OsdPosTopRight}"/>
               </ComboBox>
+            </Grid>
+            <!-- 提示类型 —— 打开二级弹窗逐类开关(预设/风扇/电源/刷新率/CPU/GPU/锁定键/通知) -->
+            <Grid x:Name="OsdKindsPanel" Visibility="Collapsed" Margin="0,12,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <StackPanel>
+                <TextBlock Text="{x:Static app:Strings.OsdKindsHeading}" FontSize="{DynamicResource FontSizeBody}" VerticalAlignment="Center"/>
+                <TextBlock Text="{x:Static app:Strings.OsdKindsDesc}" FontSize="{DynamicResource FontSizeCaption}"
+                           Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0"/>
+              </StackPanel>
+              <ui:Button x:Name="OsdKindsBtn" Grid.Column="1" VerticalAlignment="Center"
+                         Content="{x:Static app:Strings.OsdKindsManage}" Click="OsdKinds_Click"/>
             </Grid>
           </StackPanel>
         </ui:CardControl.Header>
@@ -327,8 +341,8 @@
             </Grid.ColumnDefinitions>
             <StackPanel>
               <StackPanel Orientation="Horizontal">
-                <ui:SymbolIcon Symbol="Window24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBlock Text="{x:Static app:Strings.TrayIconHeading}" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <ui:SymbolIcon Symbol="Window24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock Text="{x:Static app:Strings.TrayIconHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
               </StackPanel>
             </StackPanel>
             <ComboBox x:Name="TrayIconCombo" Grid.Column="1" MinWidth="{StaticResource ComboMinWidth}"
@@ -350,7 +364,10 @@
               <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <StackPanel>
-              <TextBlock Text="{x:Static app:Strings.AutoStartHeading}" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold"/>
+              <StackPanel Orientation="Horizontal">
+                <ui:SymbolIcon Symbol="Rocket24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock Text="{x:Static app:Strings.AutoStartHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+              </StackPanel>
               <TextBlock Text="{x:Static app:Strings.AutoStartDesc}" FontSize="{DynamicResource FontSizeCaption}"
                          Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0"/>
             </StackPanel>
@@ -370,8 +387,8 @@
             </Grid.ColumnDefinitions>
             <StackPanel>
               <StackPanel Orientation="Horizontal">
-                <ui:SymbolIcon Symbol="Image24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBlock x:Name="CustomLogoHeadingText" Text="{x:Static app:Strings.CustomLogoHeading}" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <ui:SymbolIcon Symbol="Image24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock x:Name="CustomLogoHeadingText" Text="{x:Static app:Strings.CustomLogoHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
               </StackPanel>
               <TextBlock x:Name="CustomLogoDescText" Text="{x:Static app:Strings.CustomLogoDesc}" FontSize="{DynamicResource FontSizeCaption}"
                          Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0"/>
@@ -405,8 +422,8 @@
             </Grid.ColumnDefinitions>
             <StackPanel>
               <StackPanel Orientation="Horizontal">
-                <ui:SymbolIcon Symbol="DarkTheme24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBlock Text="{x:Static app:Strings.ThemeHeading}" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <ui:SymbolIcon Symbol="DarkTheme24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock Text="{x:Static app:Strings.ThemeHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
               </StackPanel>
             </StackPanel>
             <ComboBox x:Name="ThemeCombo" Grid.Column="1" MinWidth="{StaticResource ComboMinWidth}"
@@ -429,8 +446,8 @@
             </Grid.ColumnDefinitions>
 	            <StackPanel>
 	              <StackPanel Orientation="Horizontal">
-	                <ui:SymbolIcon Symbol="Globe24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-	                <TextBlock Text="{x:Static app:Strings.LanguageMenu}" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+	                <ui:SymbolIcon Symbol="Globe24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+	                <TextBlock Text="{x:Static app:Strings.LanguageMenu}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
 	              </StackPanel>
 	              <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextFillColorTertiaryBrush}" Margin="24,2,0,0"
 	                         Text="{x:Static app:Strings.LangRestartHint}"/>
@@ -455,8 +472,8 @@
                 <ColumnDefinition Width="Auto"/>
               </Grid.ColumnDefinitions>
               <StackPanel Orientation="Horizontal">
-                <ui:SymbolIcon Symbol="Image24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBlock Text="{x:Static app:Strings.CustomBgHeading}" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <ui:SymbolIcon Symbol="Image24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock Text="{x:Static app:Strings.CustomBgHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
               </StackPanel>
               <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                 <ui:Button x:Name="CustomBgSelectBtn" Width="32" Height="32" Padding="0" Background="Transparent"
@@ -514,7 +531,10 @@
               <ColumnDefinition Width="Auto"/>
             </Grid.ColumnDefinitions>
             <StackPanel>
-              <TextBlock Text="{x:Static app:Strings.DataLocalizeHeading}" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold"/>
+              <StackPanel Orientation="Horizontal">
+                <ui:SymbolIcon Symbol="Map24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock Text="{x:Static app:Strings.DataLocalizeHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+              </StackPanel>
               <TextBlock Text="{x:Static app:Strings.DataLocalizeDesc}" FontSize="{DynamicResource FontSizeCaption}"
                          Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0"/>
             </StackPanel>
@@ -535,7 +555,10 @@
                 <ColumnDefinition Width="Auto"/>
               </Grid.ColumnDefinitions>
               <StackPanel>
-                <TextBlock Text="{x:Static app:Strings.DebugLogHeading}" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold"/>
+                <StackPanel Orientation="Horizontal">
+                  <ui:SymbolIcon Symbol="Bug24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                  <TextBlock Text="{x:Static app:Strings.DebugLogHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                </StackPanel>
                 <TextBlock x:Name="DebugLogDesc" Text="{x:Static app:Strings.DebugLogDesc}" FontSize="{DynamicResource FontSizeCaption}"
                            Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0"/>
               </StackPanel>
@@ -591,8 +614,8 @@
             </Grid.ColumnDefinitions>
             <StackPanel>
               <StackPanel Orientation="Horizontal">
-                <ui:SymbolIcon Symbol="DeveloperBoard24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBlock Text="{x:Static app:Strings.SettingsEnableEcAccess}" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <ui:SymbolIcon Symbol="DeveloperBoard24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock Text="{x:Static app:Strings.SettingsEnableEcAccess}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
               </StackPanel>
               <TextBlock x:Name="EcAccessDescText" Text="{x:Static app:Strings.SettingsEnableEcAccessDesc}" FontSize="{DynamicResource FontSizeCaption}"
                          Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" TextWrapping="Wrap"/>
@@ -608,8 +631,8 @@
         <ui:CardControl.Header>
           <StackPanel>
             <StackPanel Orientation="Horizontal">
-              <ui:SymbolIcon Symbol="Lightbulb24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-              <TextBlock Text="{x:Static app:Strings.SettingsLightStudioTitle}" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+              <ui:SymbolIcon Symbol="Lightbulb24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+              <TextBlock Text="{x:Static app:Strings.SettingsLightStudioTitle}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
             </StackPanel>
             <TextBlock Text="{x:Static app:Strings.SettingsLightStudioDesc}" FontSize="{DynamicResource FontSizeCaption}"
                        Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0" TextWrapping="Wrap"/>
@@ -643,8 +666,8 @@
             </Grid.ColumnDefinitions>
             <StackPanel>
               <StackPanel Orientation="Horizontal">
-                <ui:SymbolIcon Symbol="Power24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBlock Text="{x:Static app:Strings.UefiRestartHeading}" FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <ui:SymbolIcon Symbol="Power24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <TextBlock Text="{x:Static app:Strings.UefiRestartHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
               </StackPanel>
               <TextBlock x:Name="UefiRestartDescText" Text="{x:Static app:Strings.UefiRestartDesc}" FontSize="{DynamicResource FontSizeCaption}"
                          Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,2,0,0"/>

@@ -1,6 +1,21 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
+  <!-- ponytail: 滚动条轨道的翻页热区 —— 只为了保住「点轨道翻一屏」这个默认行为,
+       画出来是透明 Border。不加它,OmenScrollBar 就是个只能拖的滑轨,键盘/触摸板的
+       PageUp/PageDown 也没有落点。 -->
+  <Style x:Key="OmenScrollBarPageButton" TargetType="RepeatButton">
+    <Setter Property="Focusable" Value="False"/>
+    <Setter Property="IsTabStop" Value="False"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="RepeatButton">
+          <Border Background="Transparent"/>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <Style x:Key="OmenScrollBar" TargetType="ScrollBar">
     <Setter Property="Background" Value="Transparent"/>
     <Setter Property="Width" Value="4"/>
@@ -9,7 +24,17 @@
       <Setter.Value>
         <ControlTemplate TargetType="ScrollBar">
           <Grid Background="{TemplateBinding Background}">
+            <!-- ponytail: 原模板只有 Track,点轨道空白处没有任何反应。翻页热区必须挂到
+                 Track.DecreaseRepeatButton / IncreaseRepeatButton —— 写成 Grid 里的兄弟节点会
+                 两个都撑满全高、互相完全覆盖,命中测试永远落在最后一个(PageDown),
+                 结果点轨道顶端也是往下翻。挂在 Track 上由它按拇指位置自动分区。 -->
             <Track x:Name="PART_Track" IsDirectionReversed="True">
+              <Track.DecreaseRepeatButton>
+                <RepeatButton Command="ScrollBar.PageUpCommand" Style="{StaticResource OmenScrollBarPageButton}"/>
+              </Track.DecreaseRepeatButton>
+              <Track.IncreaseRepeatButton>
+                <RepeatButton Command="ScrollBar.PageDownCommand" Style="{StaticResource OmenScrollBarPageButton}"/>
+              </Track.IncreaseRepeatButton>
               <Track.Thumb>
                 <Thumb>
                   <Thumb.Style>

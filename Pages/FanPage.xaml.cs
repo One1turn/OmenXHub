@@ -1,4 +1,4 @@
-// FanPage.cs - 风扇控制页面
+﻿// FanPage.cs - 风扇控制页面
 // 风扇模式/灵敏度/曲线选择，自定义风扇曲线编辑，自动保护和除尘功能
 using System;
 using System.Collections.Generic;
@@ -27,8 +27,10 @@ namespace OmenSuperHub.Pages {
 
     bool _loading;
     bool _showGpuCurve;
-    bool _optionsBuilt;
     int _draggingIndex = -1;
+    // ponytail: 选中点与拖拽点分开 —— MouseUp 会把 _draggingIndex 归零,
+    // 精确输入框需要在那之后仍然知道"改的是第几个点"。
+    int _selectedPointIndex = -1;
     // ponytail: cache curve visual elements so MouseMove doesn't rebuild the
     // entire canvas (~30 WPF objects) every frame — that causes PPT-level stutter.
     Polyline _polylineElement;
@@ -48,15 +50,50 @@ namespace OmenSuperHub.Pages {
       // ponytail: 见 PerfPage.Unloaded 同理 — CachedPageService 缓存导致 Loaded 多次触发
       // 而订阅永不去订阅；Unloaded 取消以让页面可 GC。
       Unloaded += FanPage_Unloaded;
+      // ponytail: 第三扇转速展示(仅三扇机型) — 低频 2s 刷新,窗口不可见即停(NetworkBoostPage 同款守卫)。
+      _fan3Timer = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromSeconds(2) };
+      _fan3Timer.Tick += (s, e) => {
+        if (Window.GetWindow(this)?.IsVisible != true) return;
+        UpdateFan3RpmText();
+        // ponytail: 实时横线只随温度/转速变,与曲线绘制解耦 —— 每 2s 只改两个元素,
+        // 不重建整个画布(重建会打断拖拽中的鼠标捕获)。
+        UpdateLiveRpmOverlay();
+      };
+    }
+
+    readonly System.Windows.Threading.DispatcherTimer _fan3Timer;
+
+    // ponytail: 第三扇显示行 —— 仅 IsThreeFan() 时可见;DebugShowAllUi 开启后双风机也强制
+    // 显示(带 DEBUG 标注),用于无三扇机预览/排错 UI(与 PerfPage 强显卡片同款开关)。
+    void UpdateFan3RpmText() {
+      if (Fan3RpmText == null) return;
+      bool is3 = OmenHardware.IsThreeFan();
+      bool debugForce = ConfigService.DebugShowAllUi && !is3;
+      Fan3RpmText.Visibility = (is3 || debugForce) ? Visibility.Visible : Visibility.Collapsed;
+      if (!is3 && !debugForce) return;
+      int lv = HardwareService.FanSpeedNow.Count > 2 ? HardwareService.FanSpeedNow[2] : -1;
+      string prefix = debugForce ? "[DEBUG] " : "";
+      // 双风机第 3 路 level 恒 -1(EC 不回),DEBUG 态按当前 CPU/GPU 均值模拟固件跟随行为。
+      if (lv < 0) {
+        int simLv = (int)Math.Round(
+          (HardwareService.FanSpeedNow[0] + HardwareService.FanSpeedNow[1]) / 2.0);
+        if (simLv < 0) { Fan3RpmText.Text = prefix + Strings.Fan3FollowLabel; return; }
+        Fan3RpmText.Text = $"{prefix}{Strings.Fan3FollowRpm((simLv * 100).ToString())}";
+        return;
+      }
+      Fan3RpmText.Text = $"{prefix}{Strings.Fan3FollowRpm((lv * 100).ToString())}";
     }
 
     void FanPage_Unloaded(object sender, RoutedEventArgs e) {
       PresetManager.OnPresetChanged -= OnPresetChanged;
+      _fan3Timer?.Stop();
       // ponytail: CachedPageService 缓存 Page 但 Canvas 子控件 (Polyline/Ellipse) 一旦被
       // _polylineElement/_circleElements 持有就阻止 GC。卸载时同时清空 Canvas 子控件与引用。
       FanCurveCanvas.Children.Clear();
       _polylineElement = null;
       _circleElements = null;
+      _liveRpmLine = null;
+      _liveRpmLabel = null;
     }
 
     void OnPresetChanged(string preset) {
@@ -87,9 +124,9 @@ namespace OmenSuperHub.Pages {
       UpdateFanModeUI();
       _loading = false;
       ApplyPresetFanConfig();
-      // only the curve workspace (mode 3 = 自定义曲线) shows preset curves;
-      // modes 0=静音/1=降温/2=平衡/4=手动 have no UI surface for per-preset curve files.
-      if (FanModeCombo.SelectedIndex != 3) return;
+      // only the curve workspace (自定义曲线) shows preset curves;
+      // 静音/降温/平衡/手动 都没有 per-preset 曲线文件的 UI 面。
+      if (SelectedFanMode != "custom") return;
       LoadPresetCurvePoints(_currentPresetKey);
     }
 
@@ -97,16 +134,13 @@ namespace OmenSuperHub.Pages {
     void RefreshPresetList() {
       string current = ConfigService.Preset;
       if (string.IsNullOrEmpty(current)) current = "GpuPriority";
-      cbxFanPreset.Items.Clear();
+      // ponytail: 走 ComboSync 增量同步 —— 本页被 CachedPageService 缓存,每次进入都走 Loaded,
+      // 旧版无条件 Items.Clear() 会让下拉先塌掉再重建(与总览页同一个 bug)。
       var all = PresetManager.EnumerateAllPresets();
-      int idx = -1;
-      for (int i = 0; i < all.Count; i++) {
-        var (display, key) = all[i];
-        cbxFanPreset.Items.Add(new ComboBoxItem { Content = display, Tag = key });
-        if (key == current) idx = i;
-      }
+      var pairs = new List<(string Display, string Key)>(all.Count);
+      foreach (var (display, key) in all) pairs.Add((display, key));
       _loading = true;
-      cbxFanPreset.SelectedIndex = idx >= 0 ? idx : 1;
+      Utils.ComboSync.SyncTagged(cbxFanPreset, pairs, current, fallbackIndex: 1);
       _loading = false;
     }
 
@@ -127,7 +161,20 @@ namespace OmenSuperHub.Pages {
       try {
       PresetManager.OnPresetChanged -= OnPresetChanged;
       PresetManager.OnPresetChanged += OnPresetChanged;
-      if (!_optionsBuilt) { BuildFanRpmOptions(); _optionsBuilt = true; }
+      // ponytail: 第三扇显示 —— Loaded 时先刷一拍并启 2s timer(仅三扇机可见该行)。
+      UpdateFan3RpmText();
+      _fan3Timer?.Start();
+      // ponytail: 三扇机显示第三扇曲线 tab(双扇机 Collapsed);DebugShowAllUi 开启后
+      // 双风机也强显,与 UpdateFan3RpmText 同款开关 —— 编辑/保存走 Fan3TempFanMap 与
+      // custom_<preset>_fan3.txt,不碰硬件;下发仍由 TrayService IsThreeFan() 门控。
+      if (OmenHardware.IsThreeFan() || ConfigService.DebugShowAllUi) {
+        foreach (var obj in FanCurveSel.Items) {
+          if (obj is System.Windows.Controls.ComboBoxItem it && (it.Tag as string) == "fan3") {
+            it.Visibility = Visibility.Visible;
+            break;
+          }
+        }
+      }
       RefreshPresetList();
       LoadCurvePoints();
       // ponytail: 必须在 LoadConfigState 之前同步 _currentPresetKey，
@@ -136,10 +183,10 @@ namespace OmenSuperHub.Pages {
       _loading = true;
       LoadConfigState();
       UpdateFanModeUI();
-      if (FanModeCombo.SelectedIndex == 3) {
+      if (SelectedFanMode == "custom") {
         LoadPresetCurvePoints(_currentPresetKey);
       }
-      if (_initRpm > 0) { SelectRpmComboItem(_initRpm); FanRpmSlider.Value = _initRpm; }
+      if (_initRpm > 0) FanRpmSlider.Value = _initRpm;
       else FanRpmSlider.Value = 2500;
       _loading = false;
       } catch (Exception ex) {
@@ -149,11 +196,13 @@ namespace OmenSuperHub.Pages {
 
     void LoadCurvePoints() {
       var existing = FanService.LoadCustomCurve();
+      // ponytail: 起点用 600 而非 0 —— Omen EC level byte<10(<500 RPM) 有反弹风险
+      // (GenerateDefaultDualCurve 同款 floor);旧默认 (20°,0) 在 <40°C 插值会落入风险区。
       _curvePoints = (existing != null && existing.Count > 0) ? existing :
-        new List<(float, int)> { (20f, 0), (40f, 1600), (55f, 2200), (70f, 3400), (85f, 4800), (100f, 6400) };
+        new List<(float, int)> { (20f, 600), (40f, 1600), (55f, 2200), (70f, 3400), (85f, 4800), (100f, 6400) };
       var existingGpu = FanService.LoadCustomCurveGPU();
       _curvePointsGPU = (existingGpu != null && existingGpu.Count > 0) ? existingGpu :
-        new List<(float, int)> { (20f, 0), (40f, 1600), (55f, 2200), (70f, 3400), (85f, 4800), (100f, 6400) };
+        new List<(float, int)> { (20f, 600), (40f, 1600), (55f, 2200), (70f, 3400), (85f, 4800), (100f, 6400) };
       DrawFanCurve();
     }
 
@@ -161,31 +210,38 @@ namespace OmenSuperHub.Pages {
       var (cpu, gpu) = FanService.ApplyPresetCurve(presetKey);
       _curvePoints = cpu;
       _curvePointsGPU = gpu;
+      // ponytail: fan3 tab 激活时 _curvePoints 是 fan3 快照槽位 —— 在该 tab 上切预设/
+      // 切模式会让 CPU 数据覆盖槽位,之后 SaveCurve 双通道保存把 CPU 曲线写进 fan3 文件。
+      if (_fan3CurveActive) ReloadFan3Snapshot();
       DrawFanCurve();
+      // ponytail: 切预设会重载该预设的曲线 —— 未保存编辑被覆盖,脏标记同步清掉,
+      // 选中点索引也失效(点集已换),输入框退回提示态。
+      SetCurveDirty(false);
+      _selectedPointIndex = -1;
+      ShowCurvePointEditor(null);
     }
 
     void LoadConfigState() {
       try {
       string fc = ConfigService.FanControl;
-      if (fc == "smart" || fc == "custom") FanModeCombo.SelectedIndex = 3;
+      if (fc == "smart" || fc == "custom") SelectFanMode("custom");
       else if (fc == "" || fc == "auto" || fc == "silent" || fc == "cool" || fc == "balanced") {
-        // FanModeCombo 现映射 5 档: 0=静音 / 1=降温 / 2=平衡 / 3=自定义曲线 / 4=手动。
         // 平衡档对应 FanTable=="balanced"，是 GpuPriority 等内置预设的默认曲线。
         switch (ConfigService.FanTable) {
-          case "cool": FanModeCombo.SelectedIndex = 1; break;
-          case "balanced": FanModeCombo.SelectedIndex = 2; break;
-          default: FanModeCombo.SelectedIndex = 0; break; // silent / 空
+          case "cool": SelectFanMode("cool"); break;
+          case "balanced": SelectFanMode("balanced"); break;
+          default: SelectFanMode("silent"); break; // silent / 空
         }
       } else if (fc.Contains(" RPM")) {
-        FanModeCombo.SelectedIndex = 4;
+        SelectFanMode("manual");
         _initRpm = FanService.ParseFanRpm(fc);
         FanRpmSlider.Value = _initRpm;
       } else if (fc.EndsWith("%")) {
-        FanModeCombo.SelectedIndex = 4;
+        SelectFanMode("manual");
         _initRpm = FanService.ParseFanRpm(fc);
         FanRpmSlider.Value = _initRpm;
       } else {
-        FanModeCombo.SelectedIndex = 4;
+        SelectFanMode("manual");
         _initRpm = 2500;
         FanRpmSlider.Value = _initRpm;
       }
@@ -198,6 +254,8 @@ namespace OmenSuperHub.Pages {
       }
       AutoFanProtectToggle.IsChecked = ConfigService.AutoFanProtect == "on";
       FanSyncToggle.IsChecked = ConfigService.FanSync;
+      IrFanCurveToggle.IsChecked = ConfigService.UseIrForFanCurve;
+      SmartIdleLambdaToggle.IsChecked = ConfigService.SmartFanIdleLambda;
       // ponytail: smart 参数按预设从 FanCurves/custom_<preset>_smart.txt 加载。
       // 文件不存在时保留 ConfigService 字段当前值（继承上一预设，对齐 EnsurePresetCurveFile 的克隆语义）。
       var sp = FanService.LoadPresetSmartParams(_currentPresetKey);
@@ -213,41 +271,79 @@ namespace OmenSuperHub.Pages {
       SmartStepDownCombo.SelectedIndex = sd <= 100 ? 0 : sd <= 300 ? 1 : sd <= 500 ? 2 : 3;
       float hy = ConfigService.SmartFanHysteresis;
       SmartHysteresisCombo.SelectedIndex = hy <= 0.2f ? 0 : hy <= 0.5f ? 1 : 2;
+      // ponytail: 除尘卡显隐接入 —— 原先 XAML Collapsed 后从未被任何代码置 Visible,
+      // 功能等于"藏在代码里"。按能力探测显示(legacy 或标准 CleanCreek 任一支持即可);
+      // DebugShowAllUi 开启后强制显示以利无能力机型预览/排错(与 PerfPage 强显卡片同款);
+      // 三扇机在描述里注明第三扇也参与逆转。
+      bool cleanSupported = OmenHardware.IsLegacyCleanCreekSupported() || OmenHardware.IsCleanCreekSupported();
+      if (cleanSupported && OmenHardware.IsThreeFan())
+        CleanCreekDesc.Text = Strings.DustCleanDesc + " " + Strings.DustCleanFan3Note;
+      if (ConfigService.DebugShowAllUi) {
+        CleanCreekCard.Visibility = Visibility.Visible;
+        if (!cleanSupported) {
+          // 能力探测不通过的机器:DEBUG 强显但标注不可用,按钮点了会走 Unsupported 提示分支。
+          CleanCreekDesc.Text = Strings.DustCleanDesc + " [DEBUG] " + Strings.CleanCreekUnsupported;
+        }
+      } else {
+        CleanCreekCard.Visibility = cleanSupported ? Visibility.Visible : Visibility.Collapsed;
+      }
       } catch { }
     }
 
+    /// <summary>当前选中的风扇档位 Tag(silent/balanced/cool/custom/manual)。
+    /// ponytail: 顺序与逻辑解耦 —— XAML 里挪行不会改变语义。</summary>
+    string SelectedFanMode => (FanModeCombo.SelectedItem as ComboBoxItem)?.Tag as string ?? "";
+
+    /// <summary>按 Tag 选中档位。未知/空 → 不选中,保持 UI 不动。</summary>
+    void SelectFanMode(string mode) {
+      for (int i = 0; i < FanModeCombo.Items.Count; i++) {
+        if (FanModeCombo.Items[i] is ComboBoxItem ci && (ci.Tag as string) == mode) {
+          FanModeCombo.SelectedIndex = i;
+          return;
+        }
+      }
+    }
+
     void UpdateFanModeUI() {
-      int mode = FanModeCombo.SelectedIndex;
-      bool isSmartCurve = mode == 3;
-      bool isManual = mode == 4;
-      bool isAuto = (mode == 0 || mode == 1 || mode == 2); // 静音/降温/平衡 都走温度敏感自动档
+      string mode = SelectedFanMode;
+      bool isSmartCurve = mode == "custom";
+      bool isManual = mode == "manual";
+      bool isAuto = mode == "silent" || mode == "balanced" || mode == "cool";
       FanCurveCard.Visibility = isSmartCurve ? Visibility.Visible : Visibility.Collapsed;
       SmartFanCard.Visibility = isSmartCurve ? Visibility.Visible : Visibility.Collapsed;
       ManualControlCard.Visibility = isManual ? Visibility.Visible : Visibility.Collapsed;
       TempSensCard.Visibility = isAuto ? Visibility.Visible : Visibility.Collapsed;
+
+      // ponytail: 手动档没有曲线查表,这三个开关只影响 GetFanSpeedForTemperature /
+      // GetSmartFanSpeed 两条查表路径,对手动固定转速毫无作用 —— 旧版常驻显示,
+      // 用户手动档下调它们完全没反应。自动档和自定义档都吃,故只对手动档隐藏。
+      var curveDependent = isManual ? Visibility.Collapsed : Visibility.Visible;
+      FanSyncPanel.Visibility = curveDependent;
+      IrFanCurvePanel.Visibility = curveDependent;
+      SmartIdleLambdaPanel.Visibility = curveDependent;
     }
 
     void FanMode_SelectionChanged(object s, SelectionChangedEventArgs e) {
       if (_loading) return;
       TrayService.ResetAutoProtect();
-      int mode = FanModeCombo.SelectedIndex;
-      if (mode == 0) {
+      string mode = SelectedFanMode;
+      if (mode == "silent") {
         ConfigService.FanControl = "";
         ConfigService.FanTable = "silent";
-      } else if (mode == 1) {
+      } else if (mode == "cool") {
         ConfigService.FanControl = "";
         ConfigService.FanTable = "cool";
-      } else if (mode == 2) {
+      } else if (mode == "balanced") {
         ConfigService.FanControl = "";
         ConfigService.FanTable = "balanced";
-      } else if (mode == 3) {
+      } else if (mode == "custom") {
         ConfigService.FanControl = "smart";
         // ponytail: ApplyPresetCurve (called by LoadPresetCurvePoints below) is the sole
         // curve source. The old LoadFanConfig(cool/silent.txt) here only pre-stuffed the
         // maps with the wrong curve for a couple ticks before LoadPresetCurvePoints cleared
         // them — pure noise + startup skitter. InitSmartFanState is still needed to reset EMA.
         _currentPresetKey = ConfigService.Preset;
-        // ponytail: 切到 mode 3 时先重新加载该预设的 smart 参数，再用对应 EmaAlpha 初始化 EMA。
+        // ponytail: 切到自定义曲线档时先重新加载该预设的 smart 参数，再用对应 EmaAlpha 初始化 EMA。
         var sp = FanService.LoadPresetSmartParams(_currentPresetKey);
         if (sp.HasValue) {
           ConfigService.SmartFanEmaAlpha = sp.Value.emaAlpha;
@@ -257,8 +353,8 @@ namespace OmenSuperHub.Pages {
         FanService.InitSmartFanState(ConfigService.SmartFanEmaAlpha);
         LoadPresetCurvePoints(_currentPresetKey);
         SetMaxFanSpeedOff();
-        TrayService.fanControlTimer.Change(0, 1000);
-} else if (mode == 4) {
+        TrayService.fanControlTimer?.Change(0, 1000);
+      } else if (mode == "manual") {
       // ponytail: parse existing FanControl for the current manual RPM instead of
       // hardcoding 2500 — otherwise switching back to manual mode always resets
       // the slider to 2500, regardless of what the user set before or what the
@@ -266,7 +362,7 @@ namespace OmenSuperHub.Pages {
       int rpm = FanService.ParseFanRpm(ConfigService.FanControl);
       ConfigService.FanControl = rpm + " RPM";
       SetMaxFanSpeedOff();
-      TrayService.fanControlTimer.Change(Timeout.Infinite, Timeout.Infinite);
+      TrayService.fanControlTimer?.Change(Timeout.Infinite, Timeout.Infinite);
       _initRpm = rpm;
     }
     _loading = true;
@@ -284,33 +380,37 @@ namespace OmenSuperHub.Pages {
       // no map loaded yet, and the timer's "fanSpeedNow hasn't changed" guard
       // silently skipped SetFanLevel.  Switching fan modes appeared to have no
       // effect until the next preset switch kicked ApplyPresetHardware.
-      if (mode == 0) {
+      if (mode == "silent") {
         Views.OsdWindow.ShowFanModeOsd("silent");
         FanService.LoadFanConfig("silent.txt");
         SetMaxFanSpeedOff();
-        TrayService.fanControlTimer.Change(0, 1000);
-      } else if (mode == 1) {
+        TrayService.fanControlTimer?.Change(0, 1000);
+      } else if (mode == "cool") {
         Views.OsdWindow.ShowFanModeOsd("cool");
         FanService.LoadFanConfig("cool.txt");
         SetMaxFanSpeedOff();
-        TrayService.fanControlTimer.Change(0, 1000);
-      } else if (mode == 2) {
+        TrayService.fanControlTimer?.Change(0, 1000);
+      } else if (mode == "balanced") {
         Views.OsdWindow.ShowFanModeOsd("balanced");
         FanService.LoadFanConfig("balanced.txt");
         SetMaxFanSpeedOff();
-        TrayService.fanControlTimer.Change(0, 1000);
-      } else if (mode == 3) {
+        TrayService.fanControlTimer?.Change(0, 1000);
+      } else if (mode == "custom") {
         Views.OsdWindow.ShowFanModeOsd("smart");
         SetMaxFanSpeedOff();
-        FanService.ApplyCustomCurve(_curvePoints);
-        if (_curvePointsGPU != null) FanService.ApplyCustomCurveGPU(_curvePointsGPU);
-        TrayService.fanControlTimer.Change(0, 1000);
-      } else if (mode == 4) {
+        // ponytail: fan3 tab 激活时 _curvePoints 是 fan3 快照,不得喂给 ApplyCustomCurve ——
+        // CPU/GPU 查表已由上方 LoadPresetCurvePoints→ApplyPresetCurve 写好,仅非 fan3 时重放。
+        if (!_fan3CurveActive) {
+          FanService.ApplyCustomCurve(_curvePoints);
+          if (_curvePointsGPU != null) FanService.ApplyCustomCurveGPU(_curvePointsGPU);
+        }
+        TrayService.fanControlTimer?.Change(0, 1000);
+      } else if (mode == "manual") {
         Views.OsdWindow.ShowFanModeOsd(ConfigService.FanControl);
-        TrayService.fanControlTimer.Change(Timeout.Infinite, Timeout.Infinite);
+        TrayService.fanControlTimer?.Change(Timeout.Infinite, Timeout.Infinite);
         int rpm = FanService.ParseFanRpm(ConfigService.FanControl);
-        SetFanLevel(0, 0);
-        SetFanLevel(rpm / 100, rpm / 100);
+        SetFanLevel(0, 0, fan3: OmenHardware.IsThreeFan());
+        SetFanLevel(rpm / 100, rpm / 100, fan3: OmenHardware.IsThreeFan());
       }
       // ponytail: 内置预设的风扇档(含手动/固定 RPM)是临时绑定,不持久化到预设子键——
       // 切走/重启回到预设 FanTable 默认(Extreme=cool/GpuPriority=balanced/LightUse=silent)。
@@ -349,6 +449,16 @@ namespace OmenSuperHub.Pages {
       ConfigService.Save("FanSync");
     }
 
+    void IrFanCurveToggle_Changed(object sender, RoutedEventArgs e) {
+      ConfigService.UseIrForFanCurve = IrFanCurveToggle.IsChecked == true;
+      ConfigService.Save("UseIrForFanCurve");
+    }
+
+    void SmartIdleLambdaToggle_Changed(object sender, RoutedEventArgs e) {
+      ConfigService.SmartFanIdleLambda = SmartIdleLambdaToggle.IsChecked == true;
+      ConfigService.Save("SmartFanIdleLambda");
+    }
+
     void SmartEmaAlpha_Changed(object s, SelectionChangedEventArgs e) {
       if (_loading) return;
       float[] vals = { 0.1f, 0.3f, 0.5f };
@@ -380,27 +490,19 @@ namespace OmenSuperHub.Pages {
       }
     }
 
-    void BuildFanRpmOptions() {
-      FanRpmCombo.Items.Clear();
-      int[] rpms = { 1500, 2000, 2500, 3000, 3500, 4000, 4500, 5000, 5500, 6000 };
-      foreach (int r in rpms)
-        FanRpmCombo.Items.Add(new ComboBoxItem { Content = r + " RPM", Tag = r });
-    }
-
-    void FanRpmCombo_SelectionChanged(object sender, SelectionChangedEventArgs e) {
+    void FanRpmNum_ValueChanged(object s, RoutedEventArgs e) {
       if (_loading) return;
-      if (FanModeCombo.SelectedIndex != 4) return;
+      if (SelectedFanMode != "manual") return;
       _loading = true;
-      var item = FanRpmCombo.SelectedItem as ComboBoxItem;
-      if (item == null) { _loading = false; return; }
-      int rpm = (int)item.Tag;
-      FanRpmSlider.Value = rpm;
+      double? val = FanRpmNum.Value;
+      if (val == null || val < 500 || val > 6000) { _loading = false; return; }
+      int rpm = (int)val;
       SetMaxFanSpeedOff();
-      SetFanLevel(0, 0);
-      SetFanLevel(rpm / 100, rpm / 100);
+      SetFanLevel(0, 0, fan3: OmenHardware.IsThreeFan());
+      SetFanLevel(rpm / 100, rpm / 100, fan3: OmenHardware.IsThreeFan());
       ConfigService.FanControl = rpm + " RPM";
       ConfigService.Save("FanControl");
-      // ponytail: 内置预设的手动 RPM 不持久化到预设子键(临时绑定,切走/重启回 FanTable 默认);
+      // ponytail: 内置预设手动 RPM 不持久化到预设子键(临时绑定,切走/重启回 FanTable 默认);
       // 仅自定义预设完整绑定风扇配置。
       if (PresetManager.IsCustom(ConfigService.Preset)) {
         PresetManager.SaveCustomPreset(ConfigService.Preset);
@@ -408,30 +510,72 @@ namespace OmenSuperHub.Pages {
       _loading = false;
     }
 
-    void FanRpmNum_ValueChanged(object s, RoutedEventArgs e) {
-      if (_loading) return;
-      if (FanModeCombo.SelectedIndex != 4) return;
-      _loading = true;
-      double? val = FanRpmNum.Value;
-      if (val == null || val < 500 || val > 6000) { _loading = false; return; }
-      int rpm = (int)val;
-      SetMaxFanSpeedOff();
-      SetFanLevel(0, 0);
-      SetFanLevel(rpm / 100, rpm / 100);
-      ConfigService.FanControl = rpm + " RPM";
-      ConfigService.Save("FanControl");
-      SelectComboItem(FanRpmCombo, rpm + " RPM");
-      // ponytail: 与 FanRpmCombo_SelectionChanged 一致 —— 内置预设手动不持久化,仅自定义预设绑定。
-      if (PresetManager.IsCustom(ConfigService.Preset)) {
-        PresetManager.SaveCustomPreset(ConfigService.Preset);
-      }
-      _loading = false;
-    }
+    // ponytail: 曲线编辑器三态 —— false=CPU tab, gpuTab=true=GPU tab, fan3 tab 仅三扇机显示。
+    // fan3 选中时 _showGpuCurve 置 false 且 _fan3CurveActive=true,编辑/保存/绘制走 Fan3TempFanMap;
+    // _curvePoints 此时是 fan3 快照槽位 —— 离开 fan3 必须还原成 CPU 工作区(_preFan3Cpu),
+    // 否则 SaveCurve 双通道保存会把 fan3 数据写进 CPU 文件。
+    bool _fan3CurveActive;
+    List<(float temp, int rpm)> _preFan3Cpu;
 
     void FanCurveSel_Changed(object s, SelectionChangedEventArgs e) {
       if (!IsLoaded) return;
-      _showGpuCurve = FanCurveSel.SelectedIndex == 1;
-      if (_curvePoints != null || _curvePointsGPU != null) DrawFanCurve();
+      // ponytail: 切通道会重载该通道已保存的曲线,未保存的编辑就此丢失 ——
+      // 脏标记随重载清掉,避免"应用*"一直挂着提示一个已不存在改动。
+      SetCurveDirty(false);
+      _selectedPointIndex = -1;
+      ShowCurvePointEditor(null);
+      bool wasFan3 = _fan3CurveActive;
+      string channel = Utils.ComboSync.SelectedTag(FanCurveSel);
+      _fan3CurveActive = channel == "fan3";
+      _showGpuCurve = channel == "gpu";
+      if (_fan3CurveActive) {
+        // 进入第三扇 tab: 暂存 CPU 工作区,重载该 preset 的 fan3 曲线(文件不存在则预置
+        // 默认四点,否则空表无法用拖拽创建第一个点);保存时写 custom_<preset>_fan3.txt。
+        _preFan3Cpu = _curvePoints;
+        ReloadFan3Snapshot();
+      } else {
+        // ponytail: 离开 fan3 无条件先还原 CPU 槽位(无论落点 CPU 还是 GPU —— GPU tab
+        // 下 SaveCurve 也会保存 CPU 通道)。文件在则重载,不在则用进入前的快照,
+        // 内置预设无预生成文件,fallback 若信任 _curvePoints 会带上 fan3 数据。
+        if (wasFan3) {
+          var cpuSaved = FanService.LoadPresetCurve(_currentPresetKey, gpu: false);
+          _curvePoints = (cpuSaved != null && cpuSaved.Count >= 2) ? cpuSaved : _preFan3Cpu;
+          _preFan3Cpu = null;
+        }
+        var saved = FanService.LoadPresetCurve(_currentPresetKey, _showGpuCurve);
+        var fallback = (_showGpuCurve ? _curvePointsGPU : _curvePoints);
+        if (_showGpuCurve) _curvePointsGPU = (saved != null && saved.Count >= 2) ? saved : fallback;
+        else _curvePoints = (saved != null && saved.Count >= 2) ? saved : fallback;
+      }
+      if (_curvePoints != null || _curvePointsGPU != null || _fan3CurveActive) DrawFanCurve();
+    }
+
+    // ponytail: fan3 快照槽位维护 —— 重载该 preset 的 fan3 查表(空表补默认四点)并把
+    // _curvePoints 指向快照。FanCurveSel_Changed(fan3 分支)与 LoadPresetCurvePoints
+    // (fan3 tab 激活时切预设/切模式)共用,保证槽位不被 CPU 数据污染。
+    void ReloadFan3Snapshot() {
+      FanService.LoadFan3CurveIntoMap(_currentPresetKey);
+      if (FanService.Fan3TempFanMap.Count == 0) {
+        foreach (var (temp, rpm) in new[] { ((float)40, 1500), ((float)60, 2200), ((float)80, 3400), ((float)95, 4800) })
+          FanService.Fan3TempFanMap[temp] = new List<int> { rpm };
+      }
+      _curvePoints = FanService.Fan3TempFanMap
+        .OrderBy(kv => kv.Key)
+        .SelectMany(kv => kv.Value.Select(rpm => (kv.Key, rpm)))
+        .ToList();
+    }
+
+    // ponytail: 「应用」按钮 —— 解决 smart 模式下新曲线"切配置才生效"的问题:
+    // GetSmartFanSpeed 的迟滞(温度变化<Hysteresis && lastApplied>0 → 锁旧转速)在
+    // 温度未变时锁死旧值。此 handler 保存曲线 + 重置智能状态(EMA/lastApplied 清零)
+    // + 立即触发一拍心跳 → 新曲线按当前温度立刻算出转速写入 EC。fan3 tab 时
+    // SaveCurve 走 fan3 通道并刷新 Fan3TempFanMap,下一拍同样立即生效。
+    void FanCurveApply_Click(object sender, RoutedEventArgs e) {
+      SaveCurve();
+      SetCurveDirty(false);
+      if (SelectedFanMode == "custom")
+        FanService.InitSmartFanState(ConfigService.SmartFanEmaAlpha);      // 立即一拍: Change(0,1000) 触发即时回调并保持 1s 周期(对正在运行的 timer 幂等)。
+      TrayService.fanControlTimer?.Change(0, 1000);
     }
 
     void ApplyCustomCurve() {
@@ -439,6 +583,20 @@ namespace OmenSuperHub.Pages {
       if (_curvePointsGPU != null)
         FanService.ApplyCustomCurveGPU(_curvePointsGPU);
     }
+
+    /// <summary>曲线有未保存改动时:按钮文案加星号 + 提示行显示。
+    /// ponytail: 编辑与已保存原先在 UI 上完全无法区分,切预设时 LoadPresetCurvePoints
+    /// 会直接冲掉编辑结果且无任何提示。这里只做可见提示,不拦截 —— 拦截要弹确认框,
+    /// 每次切预设都弹太吵。</summary>
+    void SetCurveDirty(bool dirty) {
+      _curveDirty = dirty;
+      if (FanCurveApplyBtn != null)
+        FanCurveApplyBtn.Content = dirty ? Strings.FanCurveApplyBtnDirty : Strings.FanCurveApplyBtn;
+      if (FanCurveDirtyText != null)
+        FanCurveDirtyText.Visibility = dirty ? Visibility.Visible : Visibility.Collapsed;
+    }
+
+    bool _curveDirty;
 
     void DrawFanCurve() {
       FanCurveCanvas.Children.Clear();
@@ -462,7 +620,7 @@ namespace OmenSuperHub.Pages {
       _circleElements = null;
       var gridBrush = TryFindResource("ControlStrokeColorDefaultBrush") as Brush ?? Brushes.Gray;
       var lineBrush = TryFindResource("TextFillColorPrimaryBrush") as Brush ?? Brushes.White;
-      var accentBrush = TryFindResource("SystemAccentColor") as Brush ?? Brushes.White;
+      var accentBrush = TryFindResource("AccentOmenBrush") as Brush ?? Brushes.White;
       var mutedBrush = TryFindResource("TextFillColorSecondaryBrush") as Brush ?? Brushes.Gray;
 
       var points = _showGpuCurve ? _curvePointsGPU : _curvePoints;
@@ -514,6 +672,125 @@ namespace OmenSuperHub.Pages {
         double tx = padL + (currentTemp - MinTemp) / (MaxTemp - MinTemp) * chartW;
         FanCurveCanvas.Children.Add(new Line { X1 = tx, Y1 = padT, X2 = tx, Y2 = padT + chartH, Stroke = lineBrush, StrokeThickness = 1.5, StrokeDashArray = new DoubleCollection { 2, 2 }, Opacity = 0.7 });
       }
+
+      // ponytail: 实时转速横线 —— 拖完控制点后用户最想知道"曲线此刻算出多少 / 风扇实际多少",
+      // 旧版只画温度竖线,曲线是开环的。目标值走纯插值(ChartInterpolate),不读 FanService 的
+      // 查表(map 里存的是已生效曲线,编辑中未应用的改动看不到),这样横线跟着拖拽实时动。
+      DrawLiveRpmOverlay(padL, padT, chartW, chartH, sorted, accentBrush, mutedBrush);
+    }
+
+    /// <summary>实时横线插值自检 —— 覆盖端点钳位、中点线性插值、空表、单点、重复温度。</summary>
+    public static string ChartInterpolateSelfCheck() {
+      var fails = new List<string>();
+      void Check(bool ok, string what) { if (!ok) fails.Add(what); }
+
+      var curve = new List<(float temp, int rpm)> { (40f, 1500), (60f, 2200), (80f, 3400), (95f, 4800) };
+
+      Check(ChartInterpolate(curve, 40f) == 1500, "左端点应等于首点转速");
+      Check(ChartInterpolate(curve, 95f) == 4800, "右端点应等于末点转速");
+      Check(ChartInterpolate(curve, 10f) == 1500, "低于首点温度应钳到首点");
+      Check(ChartInterpolate(curve, 120f) == 4800, "高于末点温度应钳到末点");
+      Check(ChartInterpolate(curve, 60f) == 2200, "落在控制点上应精确命中");
+      // 50°C 在 (40,1500)-(60,2200) 正中 → 1850
+      Check(ChartInterpolate(curve, 50f) == 1850, "中点线性插值应为 1850,实际 " + ChartInterpolate(curve, 50f));
+      // 70°C 在 (60,2200)-(80,3400) 正中 → 2800
+      Check(ChartInterpolate(curve, 70f) == 2800, "中点线性插值应为 2800,实际 " + ChartInterpolate(curve, 70f));
+
+      Check(ChartInterpolate(new List<(float, int)>(), 50f) == 0, "空表应返回 0");
+      Check(ChartInterpolate(null, 50f) == 0, "null 应返回 0");
+      Check(ChartInterpolate(new List<(float, int)> { (50f, 2000) }, 80f) == 2000, "单点应恒定返回该点");
+
+      // 重复温度不能除零
+      var dup = new List<(float temp, int rpm)> { (50f, 2000), (50f, 3000), (70f, 4000) };
+      try {
+        int r = ChartInterpolate(dup, 50f);
+        Check(r > 0, "重复温度不应返回 0(实际 " + r + ")");
+      } catch (Exception ex) { fails.Add("重复温度抛异常: " + ex.GetType().Name); }
+
+      return fails.Count == 0 ? "[FanCurveInterp] PASS" : "[FanCurveInterp] FAIL: " + string.Join("; ", fails.ToArray());
+    }
+
+    /// <summary>曲线插值(纯函数):在 (temp,rpm) 序列上线性插值,越界取端点。
+    /// 与 FanService.GetFanSpeedForSpecificTemperature 同算法,但吃编辑中的内存点。</summary>
+    internal static int ChartInterpolate(List<(float temp, int rpm)> sorted, float temp) {
+      if (sorted == null || sorted.Count == 0) return 0;
+      if (temp <= sorted[0].temp) return sorted[0].rpm;
+      if (temp >= sorted[sorted.Count - 1].temp) return sorted[sorted.Count - 1].rpm;
+      for (int i = 1; i < sorted.Count; i++) {
+        if (temp > sorted[i].temp) continue;
+        var lo = sorted[i - 1];
+        var hi = sorted[i];
+        float span = hi.temp - lo.temp;
+        if (span <= 0.001f) return hi.rpm;
+        float f = (temp - lo.temp) / span;
+        return (int)Math.Round(lo.rpm + (hi.rpm - lo.rpm) * f);
+      }
+      return sorted[sorted.Count - 1].rpm;
+    }
+
+    Line _liveRpmLine;
+    TextBlock _liveRpmLabel;
+
+    /// <summary>画实时横线 + 右上角「目标 / 实际」读数。fan3 tab 没有独立 EC 转速,只显示目标。</summary>
+    void DrawLiveRpmOverlay(double padL, double padT, double chartW, double chartH,
+                            List<(float temp, int rpm)> sorted, Brush accent, Brush muted) {
+      _liveRpmLine = null;
+      _liveRpmLabel = null;
+      if (sorted == null || sorted.Count == 0) return;
+
+      _liveRpmLine = new Line {
+        Stroke = accent, StrokeThickness = 1.2, Opacity = 0.55,
+        StrokeDashArray = new DoubleCollection { 6, 3 },
+        Visibility = Visibility.Collapsed,
+      };
+      FanCurveCanvas.Children.Add(_liveRpmLine);
+
+      _liveRpmLabel = new TextBlock { FontSize = 10, Foreground = muted };
+      FanCurveCanvas.Children.Add(_liveRpmLabel);
+
+      UpdateLiveRpmOverlay(sorted);
+    }
+
+    /// <summary>刷新横线位置与读数。由绘制、拖拽、2s 定时器调用 —— 只改两个元素,不重建画布。</summary>
+    void UpdateLiveRpmOverlay(List<(float temp, int rpm)> sorted = null) {
+      if (_liveRpmLine == null || _liveRpmLabel == null) return;
+      if (sorted == null) sorted = _showGpuCurve ? _curvePointsGPU : _curvePoints;
+      if (sorted == null || sorted.Count == 0) { _liveRpmLine.Visibility = Visibility.Collapsed; return; }
+      sorted = sorted.OrderBy(p => p.temp).ToList();
+
+      double w = FanCurveCanvas.ActualWidth, h = FanCurveCanvas.ActualHeight;
+      double padL = CurvePadL, padR = CurvePadR, padT = CurvePadT, padB = CurvePadB;
+      double chartW = w - padL - padR, chartH = h - padT - padB;
+      if (chartW <= 0 || chartH <= 0) return;
+
+      float temp = _showGpuCurve ? HardwareService.GPUTemp : HardwareService.CPUTemp;
+      if (temp <= 0) { _liveRpmLine.Visibility = Visibility.Collapsed; _liveRpmLabel.Text = ""; return; }
+
+      int target = ChartInterpolate(sorted, temp);
+      // 实际转速:fan3 tab 的 _curvePoints 是 fan3 快照,EC 第 3 路在双扇机恒 -1,不显示。
+      int actual = -1;
+      if (!_fan3CurveActive) {
+        int fanIdx = _showGpuCurve ? 1 : 0;
+        if (HardwareService.FanSpeedNow.Count > fanIdx && HardwareService.FanSpeedNow[fanIdx] >= 0)
+          actual = HardwareService.FanSpeedNow[fanIdx] * 100;
+      }
+
+      if (target > 0) {
+        double ty = padT + chartH - Math.Min(target, MaxRPM) / MaxRPM * chartH;
+        _liveRpmLine.X1 = padL; _liveRpmLine.X2 = padL + chartW;
+        _liveRpmLine.Y1 = ty; _liveRpmLine.Y2 = ty;
+        _liveRpmLine.Visibility = Visibility.Visible;
+      } else {
+        _liveRpmLine.Visibility = Visibility.Collapsed;
+      }
+
+      // 读数标签放右上角(避开左侧 RPM 刻度与底部温度轴)
+      _liveRpmLabel.Text = actual >= 0
+        ? $"目标 {target} · 实际 {actual} RPM"
+        : $"目标 {target} RPM";
+      _liveRpmLabel.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+      Canvas.SetLeft(_liveRpmLabel, padL + chartW - _liveRpmLabel.DesiredSize.Width - 2);
+      Canvas.SetTop(_liveRpmLabel, padT + 2);
     }
 
     void FanCurveCanvas_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) {
@@ -529,11 +806,58 @@ namespace OmenSuperHub.Pages {
         double py = padT + chartH - (sorted[i].rpm / MaxRPM) * chartH;
         if (Math.Abs(pos.X - px) < 15 && Math.Abs(pos.Y - py) < 15) {
           _draggingIndex = i;
+          _selectedPointIndex = i;
           FanCurveCanvas.CaptureMouse();
+          // 精确输入框跟着选中点走 —— 拖拽起手时就填好当前值,拖完再改也行。
+          ShowCurvePointEditor(sorted[i]);
           e.Handled = true;
           return;
         }
       }
+    }
+
+    /// <summary>把选中点填进精确输入框并显示;传 null 则退回提示文案。</summary>
+    void ShowCurvePointEditor((float temp, int rpm)? point) {
+      if (CurvePointEditor == null || CurvePointHintText == null) return;
+      if (point == null) {
+        CurvePointEditor.Visibility = Visibility.Collapsed;
+        CurvePointHintText.Visibility = Visibility.Visible;
+        return;
+      }
+      CurvePointHintText.Visibility = Visibility.Collapsed;
+      CurvePointEditor.Visibility = Visibility.Visible;
+      CurvePointTempNum.Value = point.Value.temp;
+      CurvePointRpmNum.Value = point.Value.rpm;
+    }
+
+    /// <summary>把精确输入框的值写回选中点。约束与拖拽一致:相邻点之间留 1°C 间距,
+    /// 温度 20..105、转速 500..6400。</summary>
+    void CurvePointApply_Click(object sender, RoutedEventArgs e) {
+      if (_selectedPointIndex < 0) return;
+      var points = _showGpuCurve ? _curvePointsGPU : _curvePoints;
+      if (points == null) return;
+      var sorted = points.OrderBy(p => p.temp).ToList();
+      if (_selectedPointIndex >= sorted.Count) return;
+
+      double? t = CurvePointTempNum.Value;
+      double? r = CurvePointRpmNum.Value;
+      if (t == null || r == null) return;
+
+      float minT = _selectedPointIndex > 0 ? sorted[_selectedPointIndex - 1].temp + 1 : MinTemp;
+      float maxT = _selectedPointIndex < sorted.Count - 1 ? sorted[_selectedPointIndex + 1].temp - 1 : MaxTemp;
+      float newTemp = (float)Math.Round(Math.Max(minT, Math.Min(maxT, t.Value)));
+      int newRpm = (int)(Math.Round(Math.Max(500, Math.Min(MaxRPM, r.Value)) / 100) * 100);
+
+      // 被钳位时把结果写回输入框,用户能看到实际生效值(而不是以为自己输了 110°C)
+      CurvePointTempNum.Value = newTemp;
+      CurvePointRpmNum.Value = newRpm;
+
+      sorted[_selectedPointIndex] = (newTemp, newRpm);
+      if (_showGpuCurve) _curvePointsGPU = sorted; else _curvePoints = sorted;
+      DrawFanCurve();
+      SetCurveDirty(true);
+      // DrawFanCurve 重建了画布但不动选中态,重新填一次保持输入框与数据一致
+      ShowCurvePointEditor(sorted[_selectedPointIndex]);
     }
 
     void FanCurveCanvas_MouseMove(object sender, MouseEventArgs e) {
@@ -565,14 +889,17 @@ namespace OmenSuperHub.Pages {
         Canvas.SetLeft(_circleElements[_draggingIndex], px - CurvePointRadius);
         Canvas.SetTop(_circleElements[_draggingIndex], py - CurvePointRadius);
       }
+      // 横线/读数跟着拖拽走(只动两个元素,不重建画布)
+      UpdateLiveRpmOverlay(sorted);
+      SetCurveDirty(true);
     }
 
     void FanCurveCanvas_MouseLeftButtonUp(object sender, MouseButtonEventArgs e) {
       if (_draggingIndex >= 0) {
         _draggingIndex = -1;
         FanCurveCanvas.ReleaseMouseCapture();
-        ApplyCustomCurve();
-        SaveCurve();
+        // ponytail: 编辑期间不自动保存/应用 —— 统一走「应用」按钮(SaveCurve),
+        // 否则 smart 迟滞锁旧转速,用户误以为新曲线无效(切配置才生效的由来)。
       }
     }
 
@@ -592,7 +919,10 @@ namespace OmenSuperHub.Pages {
           if (sorted.Count <= 2) return;
           sorted.RemoveAt(i);
           if (_showGpuCurve) _curvePointsGPU = sorted; else _curvePoints = sorted;
-          DrawFanCurve(); SaveCurve(); e.Handled = true; return;
+          // 删点后索引全部重排,旧选中索引可能越界或指错点 —— 直接清掉
+          _selectedPointIndex = -1;
+          ShowCurvePointEditor(null);
+          DrawFanCurve(); SetCurveDirty(true); e.Handled = true; return;   // ponytail: 删除不自动保存,走「应用」按钮
         }
       }
       float newTemp = (float)((pos.X - padL) / chartW * (MaxTemp - MinTemp) + MinTemp);
@@ -608,10 +938,20 @@ namespace OmenSuperHub.Pages {
       newTemp = Math.Max(minT2, Math.Min(maxT2, newTemp));
       sorted.Insert(insertIdx, (newTemp, (int)newRpm));
       if (_showGpuCurve) _curvePointsGPU = sorted; else _curvePoints = sorted;
-      DrawFanCurve(); SaveCurve(); e.Handled = true;
+      _selectedPointIndex = -1;
+      ShowCurvePointEditor(null);
+      DrawFanCurve(); SetCurveDirty(true); e.Handled = true;   // ponytail: 插入不自动保存,走「应用」按钮
     }
 
     void SaveCurve() {
+      // ponytail: 第三扇 tab 激活时 —— _curvePoints 承载的是 fan3 编辑快照,
+      // 写回 fan3 文件并刷新 Fan3TempFanMap(心跳 GetFan3Speed 消费),不碰 CPU/GPU 通道。
+      if (_fan3CurveActive) {
+        if (_curvePoints == null) return;
+        FanService.SavePresetCurve(_currentPresetKey, _curvePoints, gpu: false, fan3: true);
+        FanService.LoadFan3CurveIntoMap(_currentPresetKey);   // 重载查表
+        return;
+      }
       FanService.SavePresetCurve(_currentPresetKey, _curvePoints, false);
       FanService.SavePresetCurve(_currentPresetKey, _curvePointsGPU, true);
       if (_curvePoints != null) FanService.ApplyCustomCurve(_curvePoints);
@@ -619,6 +959,32 @@ namespace OmenSuperHub.Pages {
     }
 
     // ── Import / Export / Share ──
+    // ponytail: 当前曲线通道标签 —— 导出文件名/JSON 名/分享名共用;fan3 tab 激活时
+    // 三者都走 fan3 语义,否则导出标 CPU、导入写 CPU 文件(三扇机数据错位)。
+    string CurveChannelLabel() => _fan3CurveActive ? "Fan3" : _showGpuCurve ? "GPU" : "CPU";
+
+    // ponytail: 恢复默认曲线 —— 复用 FanService.GetDefaultPresetCurve(前端原先没有入口,
+    // 用户拖坏曲线只能手动拖回来)。写回内存 + 落盘 + 应用到硬件,与「应用」同一条路径,
+    // 只是数据源换成出厂默认。fan3 没有"默认曲线"概念(固件按 CPU/GPU 均值跟随),按钮对它隐藏。
+    void FanResetBtn_Click(object sender, RoutedEventArgs e) {
+      if (_fan3CurveActive) return;
+      if (!DialogHelper.Confirm(Strings.FanCurveResetConfirm, Strings.FanCurveReset)) return;
+
+      var d = FanService.GetDefaultPresetCurve(_currentPresetKey);
+      if (_showGpuCurve) {
+        _curvePointsGPU = d.gpu.Select(p => (p.temp, p.rpm)).ToList();
+      } else {
+        // 默认曲线是 CPU/GPU 成对的 —— 恢复一个通道时另一通道也回默认,否则两边会不一致
+        // (用户在 CPU tab 点恢复,GPU 仍是拖坏的旧值,切到 GPU tab 看着"没生效")。
+        _curvePoints = d.cpu.Select(p => (p.temp, p.rpm)).ToList();
+        _curvePointsGPU = d.gpu.Select(p => (p.temp, p.rpm)).ToList();
+      }
+      SaveCurve();
+      DrawFanCurve();
+      SetCurveDirty(false);
+      DialogHelper.Info(Strings.FanCurveResetDone, Strings.FanCurveReset);
+    }
+
     void FanExportBtn_Click(object sender, RoutedEventArgs e) {
       var points = _showGpuCurve ? _curvePointsGPU : _curvePoints;
       if (points == null || points.Count < 2) {
@@ -629,10 +995,10 @@ namespace OmenSuperHub.Pages {
         Title = Strings.FanCurveExportTitle,
         Filter = Strings.FanCurveFileFilter,
         DefaultExt = ".json",
-        FileName = $"FanCurve_{( _showGpuCurve ? "GPU" : "CPU")}_{DateTime.Now:yyyyMMdd}.json"
+        FileName = $"FanCurve_{CurveChannelLabel()}_{DateTime.Now:yyyyMMdd}.json"
       };
       if (dlg.ShowDialog() == true) {
-        string name = _showGpuCurve ? "GPU Fan Curve" : "CPU Fan Curve";
+        string name = CurveChannelLabel() + " Fan Curve";
         string json = FanService.ExportCurveToJson(points, name);
         if (!string.IsNullOrEmpty(json)) {
           try {
@@ -689,7 +1055,7 @@ namespace OmenSuperHub.Pages {
 	        DialogHelper.Info(Strings.FanShareNoDataToShare, Strings.Hint);
         return;
       }
-      string name = _showGpuCurve ? "GPU" : "CPU";
+      string name = CurveChannelLabel();
       string code = FanService.GenerateShareCode(points, name);
       if (string.IsNullOrEmpty(code)) {
 	        DialogHelper.Error(Strings.FanShareGenerateFail, Strings.HelpWindowTitleBar);
@@ -707,6 +1073,8 @@ namespace OmenSuperHub.Pages {
           Owner = System.Windows.Window.GetWindow(this),
           Content = new System.Windows.Controls.StackPanel { Margin = new System.Windows.Thickness(16) }
         };
+        // ponytail: 关闭前断开 Owner,避免 owned window 关闭把主窗口误最小化(通用弹窗 bug)
+        OmenSuperHub.Utils.WindowHelper.DetachOwnerOnClose(dlg);
         var stack = dlg.Content as System.Windows.Controls.StackPanel;
 	        stack.Children.Add(new System.Windows.Controls.TextBlock {
 	          Text = Strings.FanShareCopyInstruction, FontSize = 13, Margin = new System.Windows.Thickness(0, 0, 0, 8)
@@ -746,7 +1114,12 @@ namespace OmenSuperHub.Pages {
 	    }
 
     void ApplyImportedCurve(List<(float temp, int rpm)> points, string name) {
-      if (_showGpuCurve) {
+      if (_fan3CurveActive) {
+        // fan3 tab 导入走 fan3 通道(镜像 SaveCurve fan3 分支),否则静默写坏 CPU 文件。
+        _curvePoints = points;
+        FanService.SavePresetCurve(_currentPresetKey, _curvePoints, gpu: false, fan3: true);
+        FanService.LoadFan3CurveIntoMap(_currentPresetKey);
+      } else if (_showGpuCurve) {
         _curvePointsGPU = points;
         FanService.SavePresetCurve(_currentPresetKey, _curvePointsGPU, true);
         FanService.ApplyCustomCurveGPU(_curvePointsGPU);
@@ -756,6 +1129,7 @@ namespace OmenSuperHub.Pages {
         FanService.ApplyCustomCurve(_curvePoints);
       }
       DrawFanCurve();
+      SetCurveDirty(false);
       DialogHelper.Info(
           Strings.FanCurveImportSuccess + name + $" ({points.Count} 点)\n" +
           "拖拽控制点可进一步微调", "OMEN X Hub");
@@ -765,17 +1139,31 @@ namespace OmenSuperHub.Pages {
       if (OmenHardware.IsLegacyCleanCreekSupported()) {
         if (DialogHelper.OkCancel(Strings.CleanCreekConfirmMessage, Strings.CleanCreekTitle)) {
           System.Threading.Tasks.Task.Run(async () => {
-            OmenHardware.SetLegacyCleanCreek(true);
-            await System.Threading.Tasks.Task.Delay(30000);
-            OmenHardware.SetLegacyCleanCreek(false);
+            // R15/BUG-R15-2: 对照下方标准路径 —— 旧实现无 try/finally,倒计时/WMI 任一步抛
+            // 异常(未观察任务异常被静默吞)→ SetLegacyCleanCreek(false) 永不执行,风扇停在
+            // 逆转状态。finally 兜底恢复,恢复本身再防抛。
+            try {
+              OmenHardware.SetLegacyCleanCreek(true);
+              await RunDustCleaningCountdownAsync();
+            } finally {
+              try { OmenHardware.SetLegacyCleanCreek(false); } catch (Exception ex) { Logger.Error($"CleanCreek legacy restore: {ex.Message}"); }
+            }
           });
         }
       } else if (OmenHardware.IsCleanCreekSupported()) {
         if (DialogHelper.OkCancel(Strings.CleanCreekConfirmMessage, Strings.CleanCreekTitle)) {
           System.Threading.Tasks.Task.Run(async () => {
-            SetFanLevel(0, 0, false, true);
-            await System.Threading.Tasks.Task.Delay(30000);
-            SetFanLevel(0, 0);
+            // ponytail: 除尘期间暂停风扇心跳 —— 心跳每秒写正常转速,会覆盖 +128 逆转字节,
+            // 30s 清灰流程里两者互相打架导致逆转时断时续。结束/异常均恢复心跳。
+            TrayService.fanControlTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+            try {
+              // 三扇机第 3 扇(caps[2] 支持时)同样 +128 逆转;双风机 IsThreeFan()=false 载荷不变。
+              SetFanLevel(0, 0, OmenHardware.IsThreeFan(), true);
+              await RunDustCleaningCountdownAsync();
+              SetFanLevel(0, 0);
+            } finally {
+              TrayService.fanControlTimer?.Change(0, 1000);
+            }
           });
         }
       } else {
@@ -783,22 +1171,26 @@ namespace OmenSuperHub.Pages {
       }
     }
 
-    void SelectComboItem(ComboBox combo, string text) {
-      foreach (ComboBoxItem item in combo.Items) {
-        if (string.Equals(item.Content?.ToString(), text, StringComparison.Ordinal)) {
-          item.IsSelected = true;
-          return;
-        }
+    // ponytail: 除尘 UI 反馈 —— 按钮禁用 + 状态文案每秒倒计时(UI 线程 Dispatcher 后台优先级),
+    // 完成后恢复按钮与描述。除尘期间用户不再面对无响应的 30 秒黑盒。
+    async System.Threading.Tasks.Task RunDustCleaningCountdownAsync() {
+      // ponytail: 恢复时用进入前原文,而非固定 DustCleanDesc —— LoadConfigState 组合的
+      // fan3 注释/DEBUG 不可用标注不能被一次除尘抹掉。Text 读取必须在 UI 线程内。
+      string origDesc = null;
+      await Dispatcher.InvokeAsync(() => {
+        origDesc = CleanCreekDesc.Text;
+        CleanCreekBtn.IsEnabled = false;
+        CleanCreekDesc.Text = Strings.DustCleanRunning(30);
+      });
+      for (int remain = 29; remain >= 1; remain--) {
+        await System.Threading.Tasks.Task.Delay(1000);
+        int r = remain;
+        await Dispatcher.InvokeAsync(() => CleanCreekDesc.Text = Strings.DustCleanRunning(r));
       }
-    }
-
-    void SelectRpmComboItem(int rpm) {
-      foreach (ComboBoxItem item in FanRpmCombo.Items) {
-        if (item.Tag is int tagVal && tagVal == rpm) {
-          item.IsSelected = true;
-          return;
-        }
-      }
+      await Dispatcher.InvokeAsync(() => {
+        CleanCreekBtn.IsEnabled = true;
+        CleanCreekDesc.Text = origDesc ?? Strings.DustCleanDesc;
+      });
     }
 
     // ── 预设切换时同步应用风扇到硬件（不依赖 ThreadPool 异步 PresetManager.ApplyPresetHardware） ──
@@ -814,20 +1206,20 @@ namespace OmenSuperHub.Pages {
           FanService.InitSmartFanState(ConfigService.SmartFanEmaAlpha);
           FanService.ApplyPresetCurve(ConfigService.Preset);
           SetMaxFanSpeedOff();
-          TrayService.fanControlTimer.Change(0, 1000);
+          TrayService.fanControlTimer?.Change(0, 1000);
         } else if (fc != null && fc.Contains(" RPM")) {
           int rpm = FanService.ParseFanRpm(fc);
           SetMaxFanSpeedOff();
-          SetFanLevel(0, 0);
-          SetFanLevel(rpm / 100, rpm / 100);
-          TrayService.fanControlTimer.Change(Timeout.Infinite, Timeout.Infinite);
+          SetFanLevel(0, 0, fan3: OmenHardware.IsThreeFan());
+          SetFanLevel(rpm / 100, rpm / 100, fan3: OmenHardware.IsThreeFan());
+          TrayService.fanControlTimer?.Change(Timeout.Infinite, Timeout.Infinite);
         } else {
           string table = ft == "cool" ? "cool.txt"
                        : ft == "balanced" ? "balanced.txt"
                        : "silent.txt";
           FanService.LoadFanConfig(table);
           SetMaxFanSpeedOff();
-          TrayService.fanControlTimer.Change(0, 1000);
+          TrayService.fanControlTimer?.Change(0, 1000);
         }
       } catch { }
     }

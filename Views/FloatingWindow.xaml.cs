@@ -20,11 +20,24 @@ namespace OmenSuperHub.Views {
     static bool _layoutDirty = true;   // font size / orientation changed → re-ApplyLayoutAndTextSize
     static bool _positionDirty = true;  // screen/loc/opacity changed → re-UpdatePosition + ApplyWindowStyles
     static bool _fpsStarting;           // PresentMon startup is async; avoid double-spawn on UI thread
+    // ponytail: 回收代际 —— 每次 DisposeFpsMonitorAsync() 自增。异步 spawn 的 seed 写回前对号,
+    // 号变了说明 CloseAll/关 FPS 已经跑过, 就地 Dispose 不再交出。少了这道闸: CloseAll 在
+    // EnsureRunning 期间跑完(此刻 _fpsMonitor 还是 null, 无物可 Dispose), seed 随后照样发布, 而浮窗
+    // 已关、定时器已停 → 再没人调 DisposeFpsMonitorAsync, 那个 PresentMon.exe 就地长跑。
+    // (EnsureRunning("") 走空过滤分支, PresentMonFpsMonitor.cs:215-217 只在带 process_name 时才加
+    // --terminate_on_proc_exit, 没有"宿主退了它自杀"的约定可依赖。)
+    // _fpsLock 只罩 seed 的"发布/回收"这一对交接, 不在每 tick 热路径上加锁。
+    static readonly object _fpsLock = new object();
+    static int _fpsGeneration;
 
     // ponytail: Dispose PresentMon off UI thread — Stop() does Kill+WaitForExit(1000) which would block the render
     static void DisposeFpsMonitorAsync() {
-      var m = _fpsMonitor;
-      _fpsMonitor = null;
+      PresentMonFpsMonitor m;
+      lock (_fpsLock) {
+        _fpsGeneration++;
+        m = _fpsMonitor;
+        _fpsMonitor = null;
+      }
       if (m != null) System.Threading.Tasks.Task.Run(() => { try { m.Dispose(); } catch { } });
     }
 
@@ -147,7 +160,7 @@ namespace OmenSuperHub.Views {
           : t < 70f ? LerpColor(Color.FromRgb(102, 187, 106), Color.FromRgb(255, 235, 59), (t - 55f) / 15f)
           : t < 85f ? LerpColor(Color.FromRgb(255, 235, 59), Color.FromRgb(255, 107, 107), (t - 70f) / 15f)
           : t < 95f ? LerpColor(Color.FromRgb(255, 107, 107), Color.FromRgb(180, 0, 0), (t - 85f) / 10f)
-          : Color.FromRgb(0, 0, 0);
+          : Color.FromRgb(255, 64, 64);
       var b = new SolidColorBrush(c); b.Freeze(); return b;
     }).ToArray();
 
@@ -212,11 +225,15 @@ namespace OmenSuperHub.Views {
         // ponytail: spawn presentMon off the UI thread; first tick shows nothing, next tick after startup shows FPS
         if (_fpsMonitor == null && !_fpsStarting) {
           _fpsStarting = true;
+          int gen = _fpsGeneration;
           var seed = new PresentMonFpsMonitor();
           System.Threading.Tasks.Task.Run(() => {
             try { seed.EnsureRunning("", out _); } catch { }
-            _fpsMonitor = seed;
-            _fpsStarting = false;
+            // 对号后再发布: 号变了(CloseAll/关 FPS 抢在写回前跑过)就地释放, 不留孤儿进程
+            bool stale;
+            lock (_fpsLock) { stale = _fpsGeneration != gen; if (!stale) _fpsMonitor = seed; }
+            _fpsStarting = false;   // 先放行再 Kill, 免得重开 FPS 时白等一拍的 WaitForExit
+            if (stale) { try { seed.Dispose(); } catch { } }
           });
         }
         _fpsMonitor?.Poll();
@@ -242,7 +259,7 @@ namespace OmenSuperHub.Views {
         int idx = (int)Math.Max(0, Math.Min(100, cpuTemp));
         if (idx != w._lastCpuTempIdx) { w.CpuTempText.Foreground = TempBrushes[idx]; w._lastCpuTempIdx = idx; }
         SetIfChanged(w.CpuTempText, ref w._lastCpuTemp, $"{cpuTemp:F1}°C");
-        SetIfChanged(w.CpuPowerText, ref w._lastCpuPower, $"{HardwareService.CPUPower:F1}W");
+        SetIfChanged(w.CpuPowerText, ref w._lastCpuPower, $"{HardwareService.GetDisplayCpuPower():F1}W");
         SetIfChanged(w.CpuUsageText, ref w._lastCpuUsage, $"{HardwareService.CPUUsage:F0}%");
         SetIfChanged(w.CpuFreqText, ref w._lastCpuFreq, $"{HardwareService.CPUClock:F0}M");
       } else {
@@ -255,7 +272,7 @@ namespace OmenSuperHub.Views {
         int idx = (int)Math.Max(0, Math.Min(100, gpuTemp));
         if (idx != w._lastGpuTempIdx) { w.GpuTempText.Foreground = TempBrushes[idx]; w._lastGpuTempIdx = idx; }
         SetIfChanged(w.GpuTempText, ref w._lastGpuTemp, $"{gpuTemp:F1}°C");
-        SetIfChanged(w.GpuPowerText, ref w._lastGpuPower, $"{HardwareService.GPUPower:F1}W");
+        SetIfChanged(w.GpuPowerText, ref w._lastGpuPower, $"{HardwareService.GetDisplayGpuPower():F1}W");
         SetIfChanged(w.GpuUsageText, ref w._lastGpuUsage, $"{HardwareService.GPUUsage:F0}%");
         SetIfChanged(w.GpuFreqText, ref w._lastGpuFreq, $"{HardwareService.GPUClock:F0}M");
       } else {
@@ -264,8 +281,10 @@ namespace OmenSuperHub.Views {
 
       if (HardwareService.MonitorFan) {
         w.FanRow.Visibility = Visibility.Visible;
-        SetIfChanged(w.FanSpeed0Text, ref w._lastFanSpeed0, $"{HardwareService.FanSpeedNow[0] * 100}");
-        SetIfChanged(w.FanSpeed1Text, ref w._lastFanSpeed1, $"{HardwareService.FanSpeedNow[1] * 100}");
+        // ponytail: 走钳位显示访问器 —— 首拍 EC 未读到前 FanSpeedNow 是 -1 哨兵, 直出会显 "-100"
+        var fan = HardwareService.FanSpeedNow;
+        SetIfChanged(w.FanSpeed0Text, ref w._lastFanSpeed0, $"{HardwareService.GetDisplayFanSpeedPct(fan[0])}");
+        SetIfChanged(w.FanSpeed1Text, ref w._lastFanSpeed1, $"{HardwareService.GetDisplayFanSpeedPct(fan[1])}");
       } else {
         w.FanRow.Visibility = Visibility.Collapsed;
       }
@@ -280,8 +299,8 @@ namespace OmenSuperHub.Views {
 
       if (ConfigService.MonitorNetwork && s.NetValid) {
         w.NetRow.Visibility = Visibility.Visible;
-        SetIfChanged(w.NetDownText, ref w._lastNetDown, $"↓{s.DownKBps:F0}KB/s");
-        SetIfChanged(w.NetUpText, ref w._lastNetUp, $"↑{s.UpKBps:F0}KB/s");
+        SetIfChanged(w.NetDownText, ref w._lastNetDown, $"↓{FormatSpeed(s.DownKBps)}");
+        SetIfChanged(w.NetUpText, ref w._lastNetUp, $"↑{FormatSpeed(s.UpKBps)}");
       } else {
         w.NetRow.Visibility = Visibility.Collapsed;
       }
@@ -333,6 +352,11 @@ namespace OmenSuperHub.Views {
         return name.Length > 12 ? name.Substring(0, 12) + ".." : name;
       } catch { return app; }
     }
+
+    // ponytail: ≥10000KB/s 换算 MB/s(保留一位小数),否则整 KB/s — 固定宽度列防溢出叠印 NET 标签。
+    // 与 NetworkSpeedService 同口径(其 KB = bytes/1024),故 MB = KB/1024。
+    static string FormatSpeed(double kbps) =>
+      kbps >= 10000 ? $"{kbps / 1024.0:F1}MB/s" : $"{kbps:F0}KB/s";
 
 	    public static void UpdateAllText() {
       // external callers (SettingsPage/DashboardPage/TrayService) want a forced refresh after config changes
@@ -485,9 +509,9 @@ namespace OmenSuperHub.Views {
       MemUsedText.Width = EmW(fontSize - 2, 10); MemUsedText.TextAlignment = TextAlignment.Right;
       NetLabel.FontSize = fontSize;
       NetDownText.FontSize = fontSize;
-      NetDownText.Width = EmW(fontSize, 7); NetDownText.TextAlignment = TextAlignment.Right;
+      NetDownText.Width = EmW(fontSize, 10); NetDownText.TextAlignment = TextAlignment.Right;
       NetUpText.FontSize = fontSize - 2;
-      NetUpText.Width = EmW(fontSize - 2, 7); NetUpText.TextAlignment = TextAlignment.Right;
+      NetUpText.Width = EmW(fontSize - 2, 10); NetUpText.TextAlignment = TextAlignment.Right;
       FpsLabel.FontSize = fontSize;
       FpsValueText.FontSize = fontSize;
       FpsValueText.Width = EmW(fontSize, 4); FpsValueText.TextAlignment = TextAlignment.Right;

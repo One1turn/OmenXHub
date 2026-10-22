@@ -128,29 +128,43 @@ namespace OmenSuperHub.Pages {
       string presetKey = ConfigService.Preset;
       string fc = ConfigService.FanControl;
       string ft = ConfigService.FanTable;
+      // ponytail: 电池健康 — 30s 节流,后台 WMI 查询(不阻塞 UI),失败显示 "-"。
+      if ((DateTime.UtcNow - _lastBatteryHealthUtc).TotalSeconds >= 30) {
+        _lastBatteryHealthUtc = DateTime.UtcNow;
+        Task.Run(() => {
+          var bh = Services.BatteryHealthService.Query();
+          Logger.Info($"[BatteryHealth] Present={bh.Present} Charge={bh.ChargePercent}% Wear={bh.WearPercent}% Charging={bh.Charging}");
+          Dispatcher.BeginInvoke(new Action(() => {
+            if (BatteryHealthText == null) return;
+            if (!bh.Present) { BatteryHealthText.Text = "-"; return; }
+            string charge = bh.ChargePercent >= 0 ? bh.ChargePercent + "%" : "-";
+            // ponytail: 磨损度需 Design/Full 容量都有效;缺失(部分机器 Win32_Battery 不填)显示 "-"。
+            string wear = bh.WearPercent >= 0 ? bh.WearPercent + "%" : "-";
+            BatteryHealthText.Text = $"{charge} | 健康 {wear}";
+          }), DispatcherPriority.Background);
+        });
+      }
       Task.Run(() => {
         var mem = memOn ? GetMemoryStatus() : default;
         int cpuTemp = cpuOn ? (int)HardwareService.GetDisplayCpuTemp() : 0;
         double cpuUtil = cpuOn ? HardwareService.CPUUsage : 0;
         double cpuFan = cpuOn ? HardwareService.FanSpeedNow[0] * 100 : 0;
-        double cpuPower = cpuOn ? HardwareService.CPUPower : 0;
         double cpuClock = cpuOn ? HardwareService.CPUClock : 0;
         int gpuTemp = gpuOn ? (int)HardwareService.GetDisplayGpuTemp() : 0;
         double gpuUtil = gpuOn ? HardwareService.GPUUsage : 0;
         double gpuFan = gpuOn ? HardwareService.FanSpeedNow[1] * 100 : 0;
-        double gpuPower = gpuOn ? HardwareService.GPUPower : 0;
         double gpuClock = gpuOn ? HardwareService.GPUClock : 0;
-        int ir = GetSensorTemperature(0);
+        int ir = (int)HardwareService.GetDisplayIrTemp();
         int amb = GetSensorTemperature(1);
         int pch = GetSensorTemperature(2);
         int vr = GetSensorTemperature(3);
         // Push results back to UI thread
         Dispatcher.BeginInvoke(new Action(() =>
-          RefreshDashboardCore(cpuOn, gpuOn, memOn, mem, cpuTemp, cpuUtil, cpuFan, cpuPower, cpuClock,
-              gpuTemp, gpuUtil, gpuFan, gpuPower, gpuClock, presetKey, fc, ft)
+          RefreshDashboardCore(cpuOn, gpuOn, memOn, mem, cpuTemp, cpuUtil, cpuFan, cpuClock,
+              gpuTemp, gpuUtil, gpuFan, gpuClock, presetKey, fc, ft)
         ), DispatcherPriority.Background);
         Dispatcher.BeginInvoke(new Action(() =>
-          RefreshSensorsCore(cpuTemp, gpuOn ? gpuTemp : 0, ir, amb, pch, vr)
+          RefreshSensorsCore(cpuTemp, gpuTemp, ir, amb, pch, vr)
         ), DispatcherPriority.Background);
         // ponytail: 解耦 —— 不再在此驱动 FloatingWindow.UpdateAllText()。浮窗已有独立 1Hz 后端
         // timer(EnsureTimer)+ TrayService.UpdateTooltip 的 UpdateAllTextTicked 驱动,此处再 forceLayout
@@ -174,9 +188,9 @@ namespace OmenSuperHub.Pages {
         CpuFanBar.Foreground = GetGradientBrush(HardwareService.FanSpeedNow[0] * 100, 6400);
         AnimateBar(CpuFanBar, HardwareService.FanSpeedNow[0] * 100);
         
-        CpuPowerText.Text = HardwareService.CPUPower.ToString("F1") + " W";
-        CpuPowerBar.Foreground = GetGradientBrush(HardwareService.CPUPower, 150);
-        AnimateBar(CpuPowerBar, HardwareService.CPUPower);
+        CpuPowerText.Text = HardwareService.GetDisplayCpuPower().ToString("F1") + " W";
+        CpuPowerBar.Foreground = GetGradientBrush(HardwareService.GetDisplayCpuPower(), 150);
+        AnimateBar(CpuPowerBar, HardwareService.GetDisplayCpuPower());
 
         // ponytail: CPUClock is the max core clock (MHz); 6000 covers modern boost bins.
         double cpuClock = HardwareService.CPUClock;
@@ -202,9 +216,9 @@ namespace OmenSuperHub.Pages {
         GpuFanBar.Foreground = GetGradientBrush(HardwareService.FanSpeedNow[1] * 100, 6400);
         AnimateBar(GpuFanBar, HardwareService.FanSpeedNow[1] * 100);
         
-        GpuPowerText.Text = HardwareService.GPUPower.ToString("F1") + " W";
-        GpuPowerBar.Foreground = GetGradientBrush(HardwareService.GPUPower, 170);
-        AnimateBar(GpuPowerBar, HardwareService.GPUPower);
+        GpuPowerText.Text = HardwareService.GetDisplayGpuPower().ToString("F1") + " W";
+        GpuPowerBar.Foreground = GetGradientBrush(HardwareService.GetDisplayGpuPower(), 170);
+        AnimateBar(GpuPowerBar, HardwareService.GetDisplayGpuPower());
 
         // ponytail: GPUClock is the core clock (MHz); 3000 covers typical boost bins.
         double gpuClock = HardwareService.GPUClock;
@@ -226,11 +240,13 @@ namespace OmenSuperHub.Pages {
           double pageUsedGB = (mem.ullTotalPageFile - mem.ullAvailPageFile) / (1024.0 * 1024 * 1024);
           double pageTotalGB = mem.ullTotalPageFile / (1024.0 * 1024 * 1024);
           DrawMemoryRing(memPct);
-          RamDetailText.Text = $"{usedGB:F1} GB / {totalGB:F1} GB";
+          DrawVirtualMemoryRing(pageTotalGB > 0 ? pageUsedGB / pageTotalGB * 100.0 : -1);
+          if (!_memCleanMsgActive) RamDetailText.Text = $"{usedGB:F1} GB / {totalGB:F1} GB";
           RamVirtualText.Text = $"{pageUsedGB:F1} GB / {pageTotalGB:F1} GB";
-          CleanMemBtn.IsEnabled = true;
+          if (!_memCleanMsgActive) CleanMemBtn.IsEnabled = true;
         } else {
           DrawMemoryRing(-1);
+          DrawVirtualMemoryRing(-1);
           RamDetailText.Text = "-";
           RamVirtualText.Text = "-";
           CleanMemBtn.IsEnabled = false;
@@ -272,8 +288,8 @@ namespace OmenSuperHub.Pages {
 
     /// <summary>UI-only update from pre-fetched data (called from timer background thread).</summary>
     void RefreshDashboardCore(bool cpuOn, bool gpuOn, bool memOn, MEMORYSTATUSEX mem,
-        int cpuTemp, double cpuUtil, double cpuFan, double cpuPower, double cpuClock,
-        int gpuTemp, double gpuUtil, double gpuFan, double gpuPower, double gpuClock,
+        int cpuTemp, double cpuUtil, double cpuFan, double cpuClock,
+        int gpuTemp, double gpuUtil, double gpuFan, double gpuClock,
         string presetKey, string fc, string ft) {
       if (cpuOn) {
         CpuTempText.Text = cpuTemp.ToString();
@@ -285,6 +301,8 @@ namespace OmenSuperHub.Pages {
         CpuFanText.Text = cpuFan.ToString("F0") + " RPM";
         CpuFanBar.Foreground = GetGradientBrush(cpuFan, 6400);
         AnimateBar(CpuFanBar, cpuFan);
+        // ponytail: 提局部变量 —— 原先每 tick 对同一个显示功耗读 3 次(文本/刷子/进度条)。
+        double cpuPower = HardwareService.GetDisplayCpuPower();
         CpuPowerText.Text = cpuPower.ToString("F1") + " W";
         CpuPowerBar.Foreground = GetGradientBrush(cpuPower, 150);
         AnimateBar(CpuPowerBar, cpuPower);
@@ -304,6 +322,7 @@ namespace OmenSuperHub.Pages {
         GpuFanText.Text = gpuFan.ToString("F0") + " RPM";
         GpuFanBar.Foreground = GetGradientBrush(gpuFan, 6400);
         AnimateBar(GpuFanBar, gpuFan);
+        double gpuPower = HardwareService.GetDisplayGpuPower();
         GpuPowerText.Text = gpuPower.ToString("F1") + " W";
         GpuPowerBar.Foreground = GetGradientBrush(gpuPower, 170);
         AnimateBar(GpuPowerBar, gpuPower);
@@ -322,15 +341,21 @@ namespace OmenSuperHub.Pages {
           double pageUsedGB = (mem.ullTotalPageFile - mem.ullAvailPageFile) / (1024.0 * 1024 * 1024);
           double pageTotalGB = mem.ullTotalPageFile / (1024.0 * 1024 * 1024);
           DrawMemoryRing(memPct);
-          RamDetailText.Text = $"{usedGB:F1} GB / {totalGB:F1} GB";
+          DrawVirtualMemoryRing(pageTotalGB > 0 ? pageUsedGB / pageTotalGB * 100.0 : -1);
+          if (!_memCleanMsgActive) RamDetailText.Text = $"{usedGB:F1} GB / {totalGB:F1} GB";
           RamVirtualText.Text = $"{pageUsedGB:F1} GB / {pageTotalGB:F1} GB";
-          CleanMemBtn.IsEnabled = true;
+          if (!_memCleanMsgActive) CleanMemBtn.IsEnabled = true;
         } else {
           DrawMemoryRing(-1);
+          DrawVirtualMemoryRing(-1);
           RamDetailText.Text = "-";
           RamVirtualText.Text = "-";
           CleanMemBtn.IsEnabled = false;
         }
+      } catch { }
+      // Storage
+      try {
+        RefreshStorage();
       } catch { }
       CurrentModeText.Text = PresetDisplayName(presetKey);
       DrawRadar(presetKey);
@@ -351,19 +376,50 @@ namespace OmenSuperHub.Pages {
       PowerStatusText.Foreground = HardwareService.PowerOnline ? _brushAccentGreen : _brushAccentYellow;
     }
 
+    // ponytail: 双列信息行的值写入 — 标签已在 XAML 静态化,这里只写【值】并做 null 防御。
+    // 值未变就跳过赋值: TextBlock.Text 的 setter 即使字符串相同也会 InvalidateMeasure,
+    // 每秒 tick 白跑一遍布局。FloatingWindow 的 SetIfChanged 是同一思路。
+    static void SetInfoValue(System.Windows.Controls.TextBlock tb, string value) {
+      if (tb == null) return;
+      string v = value ?? "";
+      if (!string.Equals(tb.Text, v, StringComparison.Ordinal)) tb.Text = v;
+    }
+
+    // ponytail: NVIDIA 温度墙/功率限制行无值时整行折叠 —— 标签已静态化,若保留空值会露出
+    // "NVIDIA 温度墙:" 的孤立标签(旧版空串是整行不显示)。功率限制值仍走整串(含 W 单位)。
+    void SetNvidiaTjmaxRow(int tj) {
+      if (SysNvidiaTjmaxRow == null || SysNvidiaTjmaxText == null) return;
+      bool on = tj > 0;
+      SysNvidiaTjmaxRow.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+      SysNvidiaTjmaxText.Text = on ? tj + " °C" : "";
+    }
+
+    void SetNvidiaPowerRow(string limitsText) {
+      if (SysNvidiaPowerRow == null || SysNvidiaPowerText == null) return;
+      bool on = !string.IsNullOrEmpty(limitsText);
+      SysNvidiaPowerRow.Visibility = on ? Visibility.Visible : Visibility.Collapsed;
+      SysNvidiaPowerText.Text = on ? limitsText : "";
+    }
+
+    // ponytail: 传感器值文本统一"读不到显 -"。cpu/gpu 用 <=0(0=监控关/数据不新鲜),
+    // ir/amb/pch/vr 用 <0(WMI byte 读数 0 合法,-1 才是失败)。标签在 XAML 静态列。
+    static string SensorValue(int v, bool zeroMeansOff) =>
+      (zeroMeansOff ? v <= 0 : v < 0) ? "-" : v + " °C";
+
     /// <summary>UI-only sensor temperature update from pre-fetched data.</summary>
     void RefreshSensorsCore(int cpuT, int gpuT, int ir, int amb, int pch, int vr) {
-      SysCpuTempText.Text = Strings.SysCPUTemp + ": " + cpuT + " °C";
-      SysGpuTempText.Text = Strings.SysGPUTemp + ": " + gpuT + " °C";
-      SysIrSensorText.Text = Strings.SysIRSensor + ": " + ir + " °C";
-      SysAmbientText.Text = Strings.SysAmbient + ": " + amb + " °C";
-      SysPchText.Text = Strings.SysPCH + ": " + pch + " °C";
-      SysVrText.Text = Strings.SysVR + ": " + vr + " °C";
+      SetInfoValue(SysCpuTempText, SensorValue(cpuT, true));
+      SetInfoValue(SysGpuTempText, SensorValue(gpuT, true));
+      SetInfoValue(SysIrSensorText, SensorValue(ir, false));
+      SetInfoValue(SysAmbientText, SensorValue(amb, false));
+      SetInfoValue(SysPchText, SensorValue(pch, false));
+      SetInfoValue(SysVrText, SensorValue(vr, false));
       UpdateExtraTempRows();
     }
 
     // ═══ 额外温度传感器(GPU Hot Spot / CPU CCD1 / M.2 SSD / 主板)— 勾选态 + 读值收敛在单 helper ═══
-    // ponytail: 读不到值显 "-",不隐藏整行(Visibility 只由 IsExtraEnabled 决定)避免遥测丢失时 UI 抖动。
+    // ponytail: 临时丢读显 "-" 不隐藏(避免遥测抖动);但机型根本没有的传感器(笔记本 SuperIO
+    // 主板温度)从未读到过,行直接隐藏——HasExtraTemp 只在有效读到时为真。
     static bool IsExtraEnabled(string id) {
       string saved = ConfigService.ExtraTempSensors ?? "";
       // 空键 = 首启全勾(与设置页 BuildExtraTempSensorOptions / BuildScreenOptions 同口径)
@@ -373,31 +429,25 @@ namespace OmenSuperHub.Pages {
       return set.Contains(id);
     }
 
-    static string ExtraTempLabel(string id) => id switch {
-      "GPUNV_HOTSPOT" => Strings.SysGpuHotSpot,
-      "CPU_COREMAX" => Strings.SysCpuCoreMax,
-      "CPU_COREAVG" => Strings.SysCpuCoreAvg,
-      "CPU_TJMAX_DISTANCE" => Strings.SysCpuTjmaxDistance,
-      "STORAGE_NVME_0" => Strings.SysNvme,
-      "MOTHERBOARD_SUPERIO" => Strings.SysMotherboard,
-      _ => id,
-    };
-
     void UpdateExtraTempRows() {
-      UpdateExtraTempRow(SysGpuHotSpotText, "GPUNV_HOTSPOT");
-      UpdateExtraTempRow(SysCpuCoreMaxText, "CPU_COREMAX");
-      UpdateExtraTempRow(SysCpuCoreAvgText, "CPU_COREAVG");
-      UpdateExtraTempRow(SysCpuTjmaxDistanceText, "CPU_TJMAX_DISTANCE");
-      UpdateExtraTempRow(SysNvmeText, "STORAGE_NVME_0");
-      UpdateExtraTempRow(SysMotherboardText, "MOTHERBOARD_SUPERIO");
+      UpdateExtraTempRow(SysGpuHotSpotRow, SysGpuHotSpotText, "GPUNV_HOTSPOT");
+      UpdateExtraTempRow(SysCpuCoreMaxRow, SysCpuCoreMaxText, "CPU_COREMAX");
+      UpdateExtraTempRow(SysCpuCoreAvgRow, SysCpuCoreAvgText, "CPU_COREAVG");
+      UpdateExtraTempRow(SysCpuTjmaxDistanceRow, SysCpuTjmaxDistanceText, "CPU_TJMAX_DISTANCE");
+      UpdateExtraTempRow(SysNvmeRow, SysNvmeText, "STORAGE_NVME_0");
+      UpdateExtraTempRow(SysMotherboardRow, SysMotherboardText, "MOTHERBOARD_SUPERIO");
     }
 
-    void UpdateExtraTempRow(System.Windows.Controls.TextBlock tb, string id) {
-      if (tb == null) return;
-      bool on = IsExtraEnabled(id);
-      tb.Visibility = on ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+    // ponytail: 行实体化为具名 Grid(row),可见性切整行(标签+值);值写 x:Name 的 TextBlock。
+    void UpdateExtraTempRow(System.Windows.Controls.Grid row, System.Windows.Controls.TextBlock tb, string id) {
+      if (row == null || tb == null) return;
+      bool on = IsExtraEnabled(id) && Services.HardwareService.HasExtraTemp(id);
+      var vis = on ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+      if (row.Visibility != vis) row.Visibility = vis;
       int v = (int)Services.HardwareService.GetDisplayExtraTemp(id);
-      tb.Text = (on && v > 0) ? ExtraTempLabel(id) + ": " + v + " °C" : ExtraTempLabel(id) + ": -";
+      // 同 SetInfoValue: 值没变就不写,免掉每秒一次的多余布局。
+      string text = (on && v > 0) ? v + " °C" : "-";
+      if (!string.Equals(tb.Text, text, StringComparison.Ordinal)) tb.Text = text;
     }
 
     void AnimateBar(ProgressBar bar, double newVal) {
@@ -415,13 +465,29 @@ namespace OmenSuperHub.Pages {
     // 页面销毁重建(隐藏到托盘再恢复/切页返回)后的新空 Canvas 会被上次实例的节流窗口跳过,
     // 导致柱状图不显示(issue: 储存柱状图消失)。
     DateTime _lastStorageRefreshUtc = DateTime.MinValue;
+    // ponytail: 电池健康查询节流 — WMI 查询有开销,30s 足够(磨损度/电量变化慢)。
+    // 实例字段:页面重建后新实例重新查询一次,避免隐藏时旧节流跨实例跳过。
+    DateTime _lastBatteryHealthUtc = DateTime.MinValue;
 
     void RefreshStorage() {
       if ((DateTime.UtcNow - _lastStorageRefreshUtc).TotalSeconds < 10) return;
       _lastStorageRefreshUtc = DateTime.UtcNow;
-      StorageBarCanvas.Children.Clear();
-      // ponytail: 柱状图 — 每盘一根竖条。Canvas 220x132:柱宽 24,间隔 6,柱高上限 96(line 12+12+96=120)。
-      // 盘符贴在柱底 96px 处,sizeStr 贴在柱顶上方。上限:>8 盘降级为文字提示(220/(24+6)≈7 盘能整字容纳)。
+      DrawStorageBars();
+    }
+
+    void StorageBarCanvas_SizeChanged(object sender, SizeChangedEventArgs e) {
+      // 卡片宽度随窗口/列宽变化 —— 柱位要重算,否则铺满后会错位。节流不适用(只改布局不改数据)。
+      DrawStorageBars();
+    }
+
+    /// <summary>按 Canvas 实测宽度把各盘柱条均分居中。ponytail: 原实现固定 220 宽 + 标签用
+    /// 固定偏移(-5/-12)定位,盘少时整块贴左、长尺寸文案(279/301G)直接压到相邻柱上。
+    /// 现在:柱槽宽 = 可用宽/盘数,柱宽 = 槽宽-间距;每段文字用 Measure 实测宽度居中,
+    /// 超出槽宽时按槽宽截断(TextTrimming),不会再重叠。</summary>
+    void DrawStorageBars() {
+      var canvas = StorageBarCanvas;
+      if (canvas == null) return;
+      canvas.Children.Clear();
       var drives = new List<(string label, double pct, string sizeStr)>();
       foreach (var drive in DriveInfo.GetDrives()) {
         if (drive.DriveType != DriveType.Fixed || !drive.IsReady) continue;
@@ -435,6 +501,9 @@ namespace OmenSuperHub.Pages {
         drives.Add((label, pct, sizeStr));
       }
 
+      double canvasW = canvas.ActualWidth;
+      if (canvasW < 40) canvasW = 220;   // 首帧尚未布局时的兜底
+
       if (drives.Count == 0) {
         var none = new TextBlock {
           Text = "-", FontSize = 11,
@@ -442,83 +511,143 @@ namespace OmenSuperHub.Pages {
           VerticalAlignment = VerticalAlignment.Center
         };
         Canvas.SetLeft(none, 4); Canvas.SetTop(none, 60);
-        StorageBarCanvas.Children.Add(none);
+        canvas.Children.Add(none);
         return;
       }
-      // ponytail: 超过 7 盘时改为横向铺满、柱宽自适应,避免溢出 Canvas 右边界。
-      double barW = drives.Count > 7
-        ? Math.Max(10, (220 - 6 * (drives.Count - 1)) / (double)drives.Count)
-        : 24.0;
-      double gap = 6.0;
-      const double barMaxH = 96.0;
-      const double baseY = 120.0; // 柱底(留 12px 给盘符标签)
+
       var tertiary = TryFindResource("TextFillColorTertiaryBrush") as Brush;
       var secondary = TryFindResource("TextFillColorSecondaryBrush") as Brush;
-
-      // ponytail: 整块柱网按 startX 居中,适配 1–7 盘 (≤7 固定柱宽 24),
-      // >7 时 barW 收窄铺满再向心偏移。剩 0 slack 时 startX=0 退化为左对齐,无副作用。
-      double startX = Math.Max(0, (220.0 - (drives.Count * barW + (drives.Count - 1) * gap)) / 2.0);
+      const double baseY = StorageBaseY;
 
       for (int i = 0; i < drives.Count; i++) {
-        double x = startX + i * (barW + gap);
-        double pct = Math.Max(0, Math.Min(100, drives[i].pct));
-        double h = barMaxH * pct / 100.0;
+        var g = StorageSlotGeometry(canvasW, drives.Count, i, drives[i].pct);
+        double pct = g.Pct;
+
         var bar = new Border {
-          Width = barW, Height = Math.Max(h, 1),
+          Width = g.BarW, Height = g.BarH,
           Background = GetGradientBrush(pct, 100),
-          CornerRadius = new CornerRadius(2, 2, 0, 0),
-          VerticalAlignment = VerticalAlignment.Bottom
+          CornerRadius = new CornerRadius(3, 3, 0, 0)
         };
-        Canvas.SetLeft(bar, x); Canvas.SetTop(bar, baseY - bar.Height);
-        StorageBarCanvas.Children.Add(bar);
+        Canvas.SetLeft(bar, g.BarX);
+        Canvas.SetTop(bar, g.BarY);
+        canvas.Children.Add(bar);
 
-        var lbl = new TextBlock { Text = drives[i].label, FontSize = 10,
-          Foreground = tertiary, HorizontalAlignment = HorizontalAlignment.Center };
-        Canvas.SetLeft(lbl, x + barW / 2 - 5); Canvas.SetTop(lbl, baseY + 2);
-        StorageBarCanvas.Children.Add(lbl);
+        // 盘符:居中于槽,限制宽度防溢出
+        var lbl = new TextBlock {
+          Text = drives[i].label, FontSize = 10, Foreground = secondary,
+          TextTrimming = TextTrimming.CharacterEllipsis
+        };
+        lbl.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        lbl.Width = Math.Min(lbl.DesiredSize.Width, g.SlotW - 2);
+        Canvas.SetLeft(lbl, g.SlotCenter - lbl.Width / 2);
+        Canvas.SetTop(lbl, baseY + 2);
+        canvas.Children.Add(lbl);
 
-        var sz = new TextBlock { Text = drives[i].sizeStr, FontSize = 9,
-          Foreground = secondary, HorizontalAlignment = HorizontalAlignment.Center };
-        Canvas.SetLeft(sz, x + barW / 2 - 12); Canvas.SetTop(sz, baseY - bar.Height - 14);
-        StorageBarCanvas.Children.Add(sz);
+        // 尺寸文案:柱顶上方,同样实测居中 + 槽宽截断
+        var sz = new TextBlock {
+          Text = drives[i].sizeStr, FontSize = 9, Foreground = tertiary,
+          TextTrimming = TextTrimming.CharacterEllipsis
+        };
+        sz.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        sz.Width = Math.Min(sz.DesiredSize.Width, g.SlotW - 2);
+        Canvas.SetLeft(sz, g.SlotCenter - sz.Width / 2);
+        Canvas.SetTop(sz, baseY - g.BarH - 14);
+        canvas.Children.Add(sz);
       }
     }
 
-    void CleanMemory_Click(object sender, RoutedEventArgs e) {
-      try {
-        var memBefore = GetMemoryStatus();
-        ulong usedBefore = memBefore.ullTotalPhys - memBefore.ullAvailPhys;
+    // ── 储存柱状图几何(纯函数,自检用) ─────────────────────────────
+    const double StorageBarMaxH = 96.0;
+    const double StorageBaseY = 120.0;     // 柱底(留 12px 给盘符)
+    const double StorageMaxSlotW = 120.0;  // 单槽宽度上限 —— 盘少时不散到卡片两端
+    const double StorageBarW = 44.0;
 
-        CleanMemBtn.IsEnabled = false;
-	        CleanMemBtn.Content = Strings.DashboardMemoryCleaning;
+    internal struct StorageSlot {
+      public double SlotW, SlotCenter, BarW, BarH, BarX, BarY, Pct;
+    }
 
-        foreach (var proc in Process.GetProcesses()) {
-          try { using (proc) NativeMethods_Proc.EmptyWorkingSet(proc.Handle); } catch { }
+    /// <summary>第 index 根柱的几何。整组在 canvasW 内水平居中:槽宽 = min(canvasW/count, 120),
+    /// 柱宽固定 44(槽过窄时收缩到槽宽-8),柱水平居中于槽。纯函数,不碰 UI —— 供自检断言
+    /// "居中"与"不重叠"。</summary>
+    internal static StorageSlot StorageSlotGeometry(double canvasW, int count, int index, double pct) {
+      var r = new StorageSlot();
+      if (count <= 0) return r;
+      double slotW = Math.Min(canvasW / count, StorageMaxSlotW);
+      double groupW = slotW * count;
+      double startX = Math.Max(0, (canvasW - groupW) / 2.0);
+      double slotCenter = startX + slotW * (index + 0.5);
+      double clamped = Math.Max(0, Math.Min(100, pct));
+      double h = Math.Max(1.0, StorageBarMaxH * clamped / 100.0);
+      double barW = Math.Min(StorageBarW, Math.Max(4.0, slotW - 8));
+      r.SlotW = slotW;
+      r.SlotCenter = slotCenter;
+      r.BarW = barW;
+      r.BarH = h;
+      r.BarX = slotCenter - barW / 2.0;
+      r.BarY = StorageBaseY - h;
+      r.Pct = clamped;
+      return r;
+    }
+
+    /// <summary>自检:任意盘数下整组水平居中、相邻柱不重叠、柱不越界。</summary>
+    public static string StorageBarSelfCheck() {
+      var fails = new List<string>();
+      foreach (double canvasW in new[] { 300.0, 520.0, 900.0 }) {
+        foreach (int count in new[] { 1, 2, 3, 5, 8, 12 }) {
+          var first = StorageSlotGeometry(canvasW, count, 0, 50);
+          var last = StorageSlotGeometry(canvasW, count, count - 1, 50);
+          // 居中:最左柱左缘到画布左边 == 最右柱右缘到画布右边
+          double leftGap = first.BarX;
+          double rightGap = canvasW - (last.BarX + last.BarW);
+          if (Math.Abs(leftGap - rightGap) > 0.51)
+            fails.Add($"w={canvasW} n={count} 未居中(左留 {leftGap:F1} vs 右留 {rightGap:F1})");
+          // 不重叠 + 不越界
+          for (int i = 0; i < count; i++) {
+            var s = StorageSlotGeometry(canvasW, count, i, 50);
+            if (s.BarX < -0.01 || s.BarX + s.BarW > canvasW + 0.01)
+              fails.Add($"w={canvasW} n={count} i={i} 柱越界({s.BarX:F1}+{s.BarW:F1} > {canvasW})");
+            if (i > 0) {
+              var prev = StorageSlotGeometry(canvasW, count, i - 1, 50);
+              if (prev.BarX + prev.BarW > s.BarX + 0.01)
+                fails.Add($"w={canvasW} n={count} i={i} 柱重叠");
+            }
+          }
         }
+      }
+      // 柱高与占比单调:0% 最矮(1px 兜底)、100% = 96
+      if (StorageSlotGeometry(500, 3, 0, 0).BarH != 1.0) fails.Add("0% 柱高应为 1px 兜底");
+      if (Math.Abs(StorageSlotGeometry(500, 3, 0, 100).BarH - StorageBarMaxH) > 0.01)
+        fails.Add("100% 柱高应等于 StorageBarMaxH");
+      return fails.Count == 0 ? "[StorageBar] PASS" : "[StorageBar] FAIL: " + string.Join("; ", fails.ToArray());
+    }
 
-        var memAfter = GetMemoryStatus();
-        ulong usedAfter = memAfter.ullTotalPhys - memAfter.ullAvailPhys;
-        long freed = (long)(usedBefore - usedAfter);
-        if (freed < 0) freed = 0;
+    // ponytail: _memCleanMsgActive —— 清理结果消息的 3s 展示窗内,屏蔽 timer tick 对
+    // RamDetailText/CleanMemBtn 的覆写(tick 每 250ms~2s 重写 GB 明细并重启用按钮,
+    // 不屏蔽则"已释放"消息活不过一个 tick、清理中还能被二次点击)。
+    bool _memCleanMsgActive;
 
-        string saved = RamDetailText.Text;
-	        RamDetailText.Text = freed > 0 ? Strings.DashboardMemoryFreedFormat(FormatBytes((ulong)freed)) : Strings.DashboardMemoryNoClean;
+    async void CleanMemory_Click(object sender, RoutedEventArgs e) {
+      try {
+        _memCleanMsgActive = true;
+        CleanMemBtn.IsEnabled = false;
+        CleanMemBtn.Content = Strings.DashboardMemoryCleaning;
+
+        // ponytail: 全进程 EmptyWorkingSet 是秒级批量操作,丢后台线程 —— 同步跑在 UI 线程
+        // 会冻结界面,"清理中"文案根本来不及渲染。实现与自动化「清理内存」步、
+        // HTTP API POST /api/memory/clean 共用同一份 AutomationProcessor.CleanMemory。
+        long freed = await Task.Run(() => AutomationProcessor.CleanMemory());
+
+        RamDetailText.Text = freed > 0 ? Strings.DashboardMemoryFreedFormat(FormatBytes((ulong)freed)) : Strings.DashboardMemoryNoClean;
         RamDetailText.Foreground = freed > 0 ? _brushAccentGreen : _brushAccentYellow;
-
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
-        timer.Tick += (s, a) => {
-          timer.Stop();
-          RamDetailText.Foreground = _brushTextPrimary;
-          CleanMemBtn.IsEnabled = true;
-          CleanMemBtn.Content = Strings.DashboardMemoryCleanBtn;
-        };
-        timer.Start();
       } catch (Exception ex) {
-	        RamDetailText.Text = Strings.DashboardMemoryCleanFailed(ex.Message);
+        RamDetailText.Text = Strings.DashboardMemoryCleanFailed(ex.Message);
         RamDetailText.Foreground = _brushAccentRed;
+      } finally {
+        // ponytail: 成功/失败共用一份 3s 恢复 timer(原先 try/catch 各一份,重复)。
         var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(3) };
         timer.Tick += (s, a) => {
           timer.Stop();
+          _memCleanMsgActive = false;
           RamDetailText.Foreground = _brushTextPrimary;
           CleanMemBtn.IsEnabled = true;
           CleanMemBtn.Content = Strings.DashboardMemoryCleanBtn;
@@ -559,9 +688,11 @@ namespace OmenSuperHub.Pages {
         b = (byte)Math.Round(36 + (68 - 36) * t);
       } else {
         double t = Math.Min(1, (pct - 92) / 8.0);
-        r = (byte)Math.Round(239 + (26 - 239) * t);
-        g = (byte)Math.Round(68 + (26 - 68) * t);
-        b = (byte)Math.Round(68 + (26 - 68) * t);
+        // ponytail: >92% 终点由 (26,26,26) 改深红 (200,30,30) —— 原色比暗色主题空轨道
+        // #FF2A2A2A 还暗,满载/满盘时指示条近乎隐形(语义反转)。保留 t 渐变,起点接 92% 的 (239,68,68)。
+        r = (byte)Math.Round(239 + (200 - 239) * t);
+        g = (byte)Math.Round(68 + (30 - 68) * t);
+        b = (byte)Math.Round(68 + (30 - 68) * t);
       }
       var brush = new SolidColorBrush(Color.FromRgb(r, g, b));
       brush.Freeze();
@@ -613,24 +744,28 @@ namespace OmenSuperHub.Pages {
       }
     }
 
+    // ponytail: 增量同步而非 Clear+重建 —— 总览页被 CachedPageService 缓存,每次进入都会走
+    // Loaded→LoadPresetState。原先无条件 Items.Clear() 会把下拉列表清空再逐条 Add,
+    // 用户第一眼看到的总是"列表先塌掉再重新长出来"的重排。现在统一走 ComboSync:
+    // 键序列一致就只刷新文案/选中项,Items 集合原封不动,视觉上零变化。
     void LoadPresetState() {
-      PresetCombo.Items.Clear();
       var all = PresetManager.EnumerateAllPresets();
-      int idx = -1;
       string current = ConfigService.Preset;
       if (string.IsNullOrEmpty(current)) current = "GpuPriority";
-      for (int i = 0; i < all.Count; i++) {
-        var (display, key) = all[i];
-        PresetCombo.Items.Add(new ComboBoxItem { Content = display, Tag = key });
-        if (key == current) idx = i;
-      }
+
+      var pairs = new List<(string Display, string Key)>(all.Count);
+      foreach (var (display, key) in all) pairs.Add((display, key));
+
       bool prevLoading = _loading;
       _loading = true;
-      if (idx >= 0) PresetCombo.SelectedIndex = idx;
-      else if (PresetCombo.Items.Count > 1) PresetCombo.SelectedIndex = 1;
+      Utils.ComboSync.SyncTagged(PresetCombo, pairs, current, fallbackIndex: 1);
       _loading = prevLoading;
       UpdatePresetButtons();
     }
+
+    /// <summary>增量同步自检已抽到 Utils.ComboSync.SelfCheck(三页共用)。</summary>
+    public static string PresetComboSyncSelfCheck() => Utils.ComboSync.SelfCheck();
+
 
     static string PresetDisplayName(string key) {
       if (key == "Extreme") return Strings.PresetExtreme;
@@ -709,7 +844,7 @@ namespace OmenSuperHub.Pages {
       _lastRadarProfile = prof; _lastRadarLang = Strings.Current; _lastRadarTheme = ConfigService.Theme;
       RadarCanvas.Children.Clear();
 
-      const double R = 46.0;
+      const double R = 34.0;
       double cx = RadarCanvas.Width / 2.0, cy = RadarCanvas.Height / 2.0;
       // 轴角度(度,0=正上,顺时针):上右下左 → CPU/GPU/续航/安静
       double[] anglesDeg = { 0, 90, 180, 270 };
@@ -741,18 +876,21 @@ namespace OmenSuperHub.Pages {
         var axis = new Line { X1 = cx, Y1 = cy, X2 = AxisPoint(i, R).X, Y2 = AxisPoint(i, R).Y,
                               Stroke = stroke, StrokeThickness = 0.6, Opacity = 0.4 };
         RadarCanvas.Children.Add(axis);
-        var lp = AxisPoint(i, R + 10);
         var tb = new TextBlock {
           Text = labels[i], FontSize = 9,
           Foreground = TryFindResource("TextFillColorTertiaryBrush") as Brush ?? stroke,
           Opacity = 0.85
         };
-        // ponytail: 标签锚点靠端点偏移,右轴外推、左轴右拉以贴轴线对齐
+        // ponytail: 标签改贴画布内缘(原按 AxisPoint(i, R+10) 端点偏移; R 缩到 34 后端点内移,
+        // 再按端点偏移标签会重新出框/压到顶点圆点)。左右标签下移 4px 避开顶点圆点:
+        // 中文 18px 居中尚可, 英文 "Quiet" 24px 居中必压左顶点圆点(实测 probe10), 下移后三语零重叠。
+        tb.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        double tw = tb.DesiredSize.Width, th = tb.DesiredSize.Height;
         switch (i) {
-          case 0: tb.HorizontalAlignment = HorizontalAlignment.Center; Canvas.SetLeft(tb, lp.X - 6); Canvas.SetTop(tb, lp.Y); break;
-          case 1: Canvas.SetLeft(tb, lp.X - 2); Canvas.SetTop(tb, lp.Y - 6); break;
-          case 2: tb.HorizontalAlignment = HorizontalAlignment.Center; Canvas.SetLeft(tb, lp.X - 6); Canvas.SetTop(tb, lp.Y - 12); break;
-          default: Canvas.SetLeft(tb, lp.X - 16); Canvas.SetTop(tb, lp.Y - 6); break;
+          case 0: Canvas.SetLeft(tb, cx - tw / 2); Canvas.SetTop(tb, 0); break;
+          case 1: Canvas.SetLeft(tb, RadarCanvas.Width - tw); Canvas.SetTop(tb, cy + 4); break;
+          case 2: Canvas.SetLeft(tb, cx - tw / 2); Canvas.SetTop(tb, RadarCanvas.Height - th); break;
+          default: Canvas.SetLeft(tb, 0); Canvas.SetTop(tb, cy + 4); break;
         }
         RadarCanvas.Children.Add(tb);
       }
@@ -814,14 +952,33 @@ namespace OmenSuperHub.Pages {
       MemRingPctText.Text = pct.ToString("F0") + "%";
     }
 
+    // ponytail: 虚拟内存环 —— 与物理环同款几何但 84px(半径 28、中心 42),
+    // 只作次要指示,故不跟利用率渐变、固定走次级描边色。pct<0 = 监控关闭。
+    double _lastMemVirtPct = double.NaN;
+
+    void DrawVirtualMemoryRing(double pct) {
+      if (MemVirtRingTrack == null || MemVirtRingArc == null) return;
+      if (_lastMemVirtPct == pct) return;
+      _lastMemVirtPct = pct;
+      if (pct < 0) {
+        MemVirtRingArc.Data = null;
+        MemVirtPctText.Text = "-";
+        RingPaths(MemVirtRingTrack, MemVirtRingArc, 0, 42, 28);
+        return;
+      }
+      MemVirtRingArc.Stroke = GetGradientBrush(pct, 100);
+      RingPaths(MemVirtRingTrack, MemVirtRingArc, pct / 100.0, 42, 28);
+      MemVirtPctText.Text = pct.ToString("F0") + "%";
+    }
+
     // ponytail: 共享圆环几何 — track 始终画整环,arc 画 pct(0..1)的进度弧。
-    // 半径 38、中心 56 对齐 112x112 Grid(系统状态圆环 + 运存圆环同款)。
+    // 默认 112x112(中心 56、半径 38),系统状态圆环 + 运存圆环同款;虚拟内存环传 42/28。
     // 参数全限定 System.Windows.Shapes.Path 以避开 System.IO.Path 命名冲突。
     // track 用两个半弧拼接:ArcSegment 在近 360° 时会被光栅器塌缩为空(经典 WPF bug,
     // WPF ArcSegment 的渲染器对大圆弧退化),导致底环不显示。两段半弧(<180° 各自稳定渲染)规避。
-    static void RingPaths(System.Windows.Shapes.Path track, System.Windows.Shapes.Path arc, double pct) {
-      const double r = 38.0;
-      double cx = 56.0, cy = 56.0;
+    static void RingPaths(System.Windows.Shapes.Path track, System.Windows.Shapes.Path arc, double pct,
+                          double cx = 56.0, double r = 38.0) {
+      double cy = cx;
       // track: 两个半弧(顶→底、底→顶)画整环,规避近 360° 退化
       var trackGeo = new StreamGeometry();
       using (var ctx = trackGeo.Open()) {
@@ -921,7 +1078,6 @@ namespace OmenSuperHub.Pages {
       string preset = item?.Tag as string;
       bool isCustom = !string.IsNullOrEmpty(preset) && PresetManager.IsCustom(preset);
       PresetRenameBtn.Visibility = isCustom ? Visibility.Visible : Visibility.Collapsed;
-      PresetSaveBtn.Visibility = isCustom ? Visibility.Visible : Visibility.Collapsed;
     }
 
     void PresetRename_Click(object sender, RoutedEventArgs e) {
@@ -941,21 +1097,17 @@ namespace OmenSuperHub.Pages {
         ExtendsContentIntoTitleBar = true,
         Background = Brushes.Transparent
       };
+      // ponytail: 关闭前断开 Owner,避免 owned window 关闭把主窗口误最小化(通用弹窗 bug)
+      OmenSuperHub.Utils.WindowHelper.DetachOwnerOnClose(dialog);
 
       var root = new Grid();
       root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
       root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
       root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-      root.Children.Add(new Border {
-        BorderBrush = TryFindResource("BorderSubtleBrush") as Brush,
-        BorderThickness = new Thickness(0, 0, 0, 1),
-        Padding = new Thickness(16, 12, 16, 12),
-        Child = new TextBlock {
-          Text = Strings.RenamePresetTitle,
-          FontSize = 14, FontWeight = FontWeights.SemiBold
-        }
-      });
+      // ponytail: 三处内联弹窗统一走 DialogHelper.MakeTitleBar(图标+标题+关闭键+拖拽区)。
+      root.Children.Add(OmenSuperHub.Utils.DialogHelper.MakeTitleBar(
+        Strings.RenamePresetTitle, Wpf.Ui.Controls.SymbolRegular.Edit24));
 
       var card = new Border {
         Background = TryFindResource("CardBackgroundFillColorDefaultBrush") as Brush,
@@ -986,15 +1138,14 @@ namespace OmenSuperHub.Pages {
       root.Children.Add(contentArea);
 
       var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-      var renameBtn = new Button {
-        Content = Strings.CustomRename, MinWidth = 80, Height = 30,
-        Padding = new Thickness(16, 4, 16, 4), Margin = new Thickness(0, 0, 8, 0)
+      var renameBtn = new Wpf.Ui.Controls.Button {
+        Content = Strings.CustomRename, MinWidth = 80, Height = 32,
+        Appearance = Wpf.Ui.Controls.ControlAppearance.Primary, Margin = new Thickness(0, 0, 8, 0)
       };
       renameBtn.Click += (s, a) => { dialog.DialogResult = true; };
       btnPanel.Children.Add(renameBtn);
-      var cancelBtn = new Button {
-        Content = Strings.AutomationCancel, MinWidth = 80, Height = 30,
-        Padding = new Thickness(16, 4, 16, 4)
+      var cancelBtn = new Wpf.Ui.Controls.Button {
+        Content = Strings.AutomationCancel, MinWidth = 80, Height = 32
       };
       cancelBtn.Click += (s, a) => dialog.Close();
       btnPanel.Children.Add(cancelBtn);
@@ -1012,82 +1163,15 @@ namespace OmenSuperHub.Pages {
       if (dialog.ShowDialog() == true) {
         string newName = tb.Text.Trim();
         if (string.IsNullOrEmpty(newName)) {
-          var errDialog = new Wpf.Ui.Controls.FluentWindow {
-            Title = Strings.Error,
-            Width = 340, Height = 180,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Owner = dialog,
-            ResizeMode = ResizeMode.NoResize,
-            ShowInTaskbar = false,
-            WindowBackdropType = Wpf.Ui.Controls.WindowBackdropType.Mica,
-            ExtendsContentIntoTitleBar = true,
-            Background = Brushes.Transparent
-          };
-          var errRoot = new Grid();
-          errRoot.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-          errRoot.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-          errRoot.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-          errRoot.Children.Add(new Border {
-            BorderBrush = TryFindResource("BorderSubtleBrush") as Brush,
-            BorderThickness = new Thickness(0, 0, 0, 1),
-            Padding = new Thickness(16, 12, 16, 12),
-            Child = new TextBlock { Text = Strings.Error, FontSize = 14, FontWeight = FontWeights.SemiBold }
-          });
-
-          var errCard = new Border {
-            Background = TryFindResource("CardBackgroundFillColorDefaultBrush") as Brush,
-            CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(12, 14, 12, 14),
-            Margin = new Thickness(12, 8, 12, 8),
-            VerticalAlignment = VerticalAlignment.Top,
-            Child = new TextBlock {
-              Text = Strings.RenamePresetError,
-              FontSize = 13,
-              Foreground = TryFindResource("TextPrimaryBrush") as Brush,
-              TextWrapping = TextWrapping.Wrap
-            }
-          };
-          var errContent = new Grid();
-          errContent.Children.Add(errCard);
-          Grid.SetRow(errContent, 1);
-          errRoot.Children.Add(errContent);
-
-          var okBtn = new Button {
-            Content = Strings.ButtonOK, MinWidth = 80, Height = 30,
-            Padding = new Thickness(16, 4, 16, 4),
-            HorizontalAlignment = HorizontalAlignment.Right
-          };
-          okBtn.Click += (s2, a2) => errDialog.DialogResult = true;
-          errRoot.Children.Add(new Border {
-            BorderBrush = TryFindResource("BorderSubtleBrush") as Brush,
-            BorderThickness = new Thickness(0, 1, 0, 0),
-            Padding = new Thickness(16, 8, 16, 8),
-            Child = okBtn
-          });
-          Grid.SetRow(errRoot.Children[errRoot.Children.Count - 1], 2);
-
-          errDialog.Content = errRoot;
-          errDialog.ShowDialog();
+          // ponytail: 原实现内联手搓一整个 FluentWindow(标题 Border/卡片/按钮栏),与 DialogHelper
+          // 完全重复且没有 TitleBar。Warn 的 _Owner() 取当前活动窗口,正好是这个重命名对话框。
+          DialogHelper.Warn(Strings.RenamePresetError, Strings.Error);
           return;
         }
-        ConfigService.SetCustomPresetName(preset, newName);
+        if (!ConfigService.SetCustomPresetName(preset, newName))
+          DialogHelper.Warn(Strings.PresetRenameSaveFail, Strings.Hint);
         LoadPresetState();
       }
-    }
-
-    void PresetSave_Click(object sender, RoutedEventArgs e) {
-      var item = PresetCombo.SelectedItem as ComboBoxItem;
-      string preset = item?.Tag as string;
-      if (string.IsNullOrEmpty(preset) || PresetManager.IsBuiltIn(preset)) return;
-
-      PresetManager.SaveCustomPreset(preset);
-      ConfigService.Save("Preset");
-
-      _loading = true;
-      int idx = PresetCombo.SelectedIndex;
-      PresetCombo.SelectedIndex = idx;
-      _loading = false;
     }
 
     bool _dashExpanded = true;
@@ -1179,6 +1263,9 @@ namespace OmenSuperHub.Pages {
       TempDispCombo.SelectedIndex = ConfigService.DisplayMode == "raw" ? 1 : 0;
     }
 
+    // ponytail: 每进程只做一次 sysinfo 完整后台刷新(见 RefreshSysInfo 内注释)
+    static bool _sysInfoFreshenedOnce;
+
     void RefreshSysInfo() {
       // ponytail: stale-cache detection — if the cached product name is
       // empty/unknown the initial query (possibly before PerformanceControl.dll
@@ -1189,40 +1276,41 @@ namespace OmenSuperHub.Pages {
               || ConfigService.SysProductName == Strings.SysUnknown
               || ConfigService.SysProductName == "未知");
       if (!string.IsNullOrEmpty(ConfigService.SysManufacturer) && !staleCache) {
-        SysManufacturerText.Text = Strings.SysManufacturer + ": " + ConfigService.SysManufacturer;
-        SysModelText.Text = Strings.SysModel + ": " + ConfigService.SysModel;
-        SysBiosText.Text = Strings.SysBiosVersion + ": " + ConfigService.SysBios;
-        SysCpuText.Text = Strings.SysCpuModel + ": " + ConfigService.SysCpu;
-        SysGpuText.Text = Strings.SysGpuList + ": " + ConfigService.SysGpu;
-        SysAdapterText.Text = Strings.SysAdapterPower + ": " + ConfigService.SysAdapterPower + " W";
+        SetInfoValue(SysManufacturerText, ConfigService.SysManufacturer);
+        SetInfoValue(SysModelText, ConfigService.SysModel);
+        SetInfoValue(SysBiosText, ConfigService.SysBios);
+        SetInfoValue(SysCpuText, ConfigService.SysCpu);
+        SetInfoValue(SysGpuText, ConfigService.SysGpu);
+        SetInfoValue(SysAdapterText, ConfigService.SysAdapterPower + " W");
         int v = ConfigService.SysValidation;
-	        SysValidationText.Text = Strings.SysModelValidation + ": " + (
-	            v == 2 ? Strings.ValidationGamingProduct :
-	            v == 1 ? Strings.ValidationUnsupported :
-	            Strings.ValidationUnsupported);
-        SysBoardText.Text = Strings.SysBoardProduct + ": " + ConfigService.SysBoardProduct;
-        SysCpuTjmaxText.Text = Strings.SysCpuTjMax + ": " + ConfigService.SysCpuTjmax + " °C";
-        SysNvidiaTjmaxText.Text = ConfigService.SysNvidiaTjmax > 0
-            ? Strings.SysNvidiaTjMax + ": " + ConfigService.SysNvidiaTjmax + " °C"
-            : "";
-        SysNvidiaPowerText.Text = !string.IsNullOrEmpty(ConfigService.SysNvidiaPowerMin)
-            ? Strings.SysNvidiaPowerLimitText(ConfigService.SysNvidiaPowerMin + " / " + ConfigService.SysNvidiaPowerMax)
-            : "";
-SysKbLightTypeText.Text = Strings.SysKbType + ": " + GetKeyboardTypeName((NbKeyboardLightingType)ConfigService.SysKbRaw);
+        SetInfoValue(SysValidationText, v == 2 ? Strings.ValidationGamingProduct : Strings.ValidationUnsupported);
+        SetInfoValue(SysBoardText, ConfigService.SysBoardProduct);
+        SetInfoValue(SysCpuTjmaxText, ConfigService.SysCpuTjmax + " °C");
+        SetNvidiaTjmaxRow(ConfigService.SysNvidiaTjmax);
+        SetNvidiaPowerRow(!string.IsNullOrEmpty(ConfigService.SysNvidiaPowerMin)
+            ? ConfigService.SysNvidiaPowerMin + " / " + ConfigService.SysNvidiaPowerMax
+            : null);
+        SetInfoValue(SysKbLightTypeText, GetKeyboardTypeName((NbKeyboardLightingType)ConfigService.SysKbRaw));
 	        // ponytail: PawnIO 状态不缓存，每次页面刷新都重新检测
 	        try {
 	          var pawnIoNow = OmenHardware.IsPawnIOInstalled()
 	              ? Strings.SysPawnInstalled + " (" + OmenHardware.GetPawnIOState() + ")"
 	              : Strings.SysPawnMissing;
 	          SysPawnIoText.Text = pawnIoNow;
+	          // ponytail: 安装按钮仅在未安装时显示;已安装隐藏(驱动由安装器常驻,无需重复装)。
+	          PawnIoInstallBtn.Visibility = OmenHardware.IsPawnIOInstalled() ? Visibility.Collapsed : Visibility.Visible;
 		          if (ConfigService.SysPawnIoText != pawnIoNow) {
 		            ConfigService.SysPawnIoText = pawnIoNow;
 		            ConfigService.Save("SysPawnIoText");
 		          }
 		        } catch { }
-	        return;
+	        // ponytail: 温度墙等缓存字段只在"缓存整体失效"时才会重新读取——真机上缓存永远命中,
+	        // GetCpuTjmax() 永不执行,温度墙永远显示注册表旧值(日志 0 次 [GetCpuTempLimit] 可证)。
+	        // 每进程首个 Dashboard 加载即使缓存命中也后台完整刷新一次,平衡 WMI 成本与新鲜度。
+	        if (_sysInfoFreshenedOnce) return;
+	        _sysInfoFreshenedOnce = true;
       }
-	      Task.Run(() => {
+      Task.Run(() => {
         string mfr = null, model = null, bios = null, cpu = null, gpu = null;
         int adapterW = 0;
         string pn = null, board = null;
@@ -1265,12 +1353,12 @@ SysKbLightTypeText.Text = Strings.SysKbType + ": " + GetKeyboardTypeName((NbKeyb
         int kbRaw = 0;
 try { kb = GetKeyboardTypeName((NbKeyboardLightingType)(kbRaw = (int)GetKeyboardType())); } catch { }
 	        try {
-          cpuTemp = Strings.SysCPUTemp + ": " + (int)HardwareService.CPUTemp + " °C";
-          gpuTemp = Strings.SysGPUTemp + ": " + (int)HardwareService.GPUTemp + " °C";
-          irTemp = Strings.SysIRSensor + ": " + GetSensorTemperature(0) + " °C";
-          ambTemp = Strings.SysAmbient + ": " + GetSensorTemperature(1) + " °C";
-          pchTemp = Strings.SysPCH + ": " + GetSensorTemperature(2) + " °C";
-          vrTemp = Strings.SysVR + ": " + GetSensorTemperature(3) + " °C";
+          cpuTemp = SensorValue((int)HardwareService.GetDisplayCpuTemp(), true);
+          gpuTemp = SensorValue((int)HardwareService.GetDisplayGpuTemp(), true);
+          irTemp = SensorValue(GetSensorTemperature(0), false);
+          ambTemp = SensorValue(GetSensorTemperature(1), false);
+          pchTemp = SensorValue(GetSensorTemperature(2), false);
+          vrTemp = SensorValue(GetSensorTemperature(3), false);
         } catch { }
         string _pn = pn, _board = board;
         int _validation = validation, _tj = tj, _nvidiaTj = nvidiaTj, _kbRaw = kbRaw;
@@ -1279,39 +1367,37 @@ try { kb = GetKeyboardTypeName((NbKeyboardLightingType)(kbRaw = (int)GetKeyboard
         Dispatcher.InvokeAsync(() => {
           var updates = new Dictionary<string, object>();
           if (mfr != null) {
-            SysManufacturerText.Text = Strings.SysManufacturer + ": " + mfr;
-            SysModelText.Text = Strings.SysModel + ": " + model;
+            SetInfoValue(SysManufacturerText, mfr);
+            SetInfoValue(SysModelText, model);
             if (ConfigService.SysManufacturer != mfr) { ConfigService.SysManufacturer = mfr; updates["SysManufacturer"] = mfr; }
             if (ConfigService.SysModel != model) { ConfigService.SysModel = model; updates["SysModel"] = model; }
-            SysBiosText.Text = Strings.SysBiosVersion + ": " + bios;
+            SetInfoValue(SysBiosText, bios);
             if (ConfigService.SysBios != bios) { ConfigService.SysBios = bios; updates["SysBios"] = bios; }
-            SysCpuText.Text = Strings.SysCpuModel + ": " + cpu;
+            SetInfoValue(SysCpuText, cpu);
             if (ConfigService.SysCpu != cpu) { ConfigService.SysCpu = cpu; updates["SysCpu"] = cpu; }
-            SysGpuText.Text = Strings.SysGpuList + ": " + gpu;
+            SetInfoValue(SysGpuText, gpu);
             if (ConfigService.SysGpu != gpu) { ConfigService.SysGpu = gpu; updates["SysGpu"] = gpu; }
-            SysAdapterText.Text = Strings.SysAdapterPower + ": " + adapterW + " W";
+            SetInfoValue(SysAdapterText, adapterW + " W");
             if (ConfigService.SysAdapterPower != adapterW) { ConfigService.SysAdapterPower = adapterW; updates["SysAdapterPower"] = adapterW; }
             SysDriverModelText.Text = Strings.SysModel + ": " + model;
           }
           if (ConfigService.SysProductName != (_pn ?? Strings.SysUnknown)) { ConfigService.SysProductName = _pn ?? Strings.SysUnknown; updates["SysProductName"] = _pn ?? Strings.SysUnknown; }
-          SysValidationText.Text = Strings.SysModelValidation + ": " + (
-              _validation >= 2 ? Strings.ValidationGamingProduct :
-              _validation == 1 ? Strings.ValidationUnsupported : Strings.ValidationUnsupported);
+          SetInfoValue(SysValidationText, _validation >= 2 ? Strings.ValidationGamingProduct : Strings.ValidationUnsupported);
           if (ConfigService.SysValidation != _validation) { ConfigService.SysValidation = _validation; updates["SysValidation"] = _validation; }
-          SysBoardText.Text = Strings.SysBoardProduct + ": " + (_board ?? Strings.SysUnknown);
+          SetInfoValue(SysBoardText, _board ?? Strings.SysUnknown);
           if (ConfigService.SysBoardProduct != (_board ?? Strings.SysUnknown)) { ConfigService.SysBoardProduct = _board ?? Strings.SysUnknown; updates["SysBoardProduct"] = _board ?? Strings.SysUnknown; }
-          SysCpuTjmaxText.Text = Strings.SysCpuTjMax + ": " + _tj + " °C";
+          SetInfoValue(SysCpuTjmaxText, _tj + " °C");
           if (ConfigService.SysCpuTjmax != _tj) { ConfigService.SysCpuTjmax = _tj; updates["SysCpuTjmax"] = _tj; }
-          SysNvidiaTjmaxText.Text = _nvidiaTj > 0 ? Strings.SysNvidiaTjMax + ": " + _nvidiaTj + " °C" : "";
+          SetNvidiaTjmaxRow(_nvidiaTj);
           if (ConfigService.SysNvidiaTjmax != _nvidiaTj) { ConfigService.SysNvidiaTjmax = _nvidiaTj; updates["SysNvidiaTjmax"] = _nvidiaTj; }
           if (_powerLimits != null && _powerLimits[0] > 0) {
-            SysNvidiaPowerText.Text = Strings.SysNvidiaPowerLimitText($"{_powerLimits[0]:F0}W / {_powerLimits[1]:F0}W");
+            SetNvidiaPowerRow($"{_powerLimits[0]:F0}W / {_powerLimits[1]:F0}W");
             string minStr = $"{_powerLimits[0]:F0}W";
             string maxStr = $"{_powerLimits[1]:F0}W";
             if (ConfigService.SysNvidiaPowerMin != minStr) { ConfigService.SysNvidiaPowerMin = minStr; updates["SysNvidiaPowerMin"] = minStr; }
             if (ConfigService.SysNvidiaPowerMax != maxStr) { ConfigService.SysNvidiaPowerMax = maxStr; updates["SysNvidiaPowerMax"] = maxStr; }
           }
-          SysKbLightTypeText.Text = Strings.SysKbType + ": " + (_kb ?? Strings.SysUnknown);
+          SetInfoValue(SysKbLightTypeText, _kb ?? Strings.SysUnknown);
           if (ConfigService.SysKbType != (_kb ?? Strings.SysUnknown)) {
             ConfigService.SysKbType = _kb ?? Strings.SysUnknown;
             updates["SysKbType"] = _kb ?? Strings.SysUnknown;
@@ -1321,31 +1407,21 @@ try { kb = GetKeyboardTypeName((NbKeyboardLightingType)(kbRaw = (int)GetKeyboard
             updates["SysKbRaw"] = _kbRaw;
           }
           if (updates.Count > 0) ConfigService.BatchSave(updates);
-          SysCpuTempText.Text = cpuTemp;
-          SysGpuTempText.Text = gpuTemp;
-          SysIrSensorText.Text = irTemp;
-          SysAmbientText.Text = ambTemp;
-          SysPchText.Text = pchTemp;
-          SysVrText.Text = vrTemp;
+          SetInfoValue(SysCpuTempText, cpuTemp);
+          SetInfoValue(SysGpuTempText, gpuTemp);
+          SetInfoValue(SysIrSensorText, irTemp);
+          SetInfoValue(SysAmbientText, ambTemp);
+          SetInfoValue(SysPchText, pchTemp);
+          SetInfoValue(SysVrText, vrTemp);
           UpdateExtraTempRows();
         }, DispatcherPriority.Background);
       });
     }
 
     void RefreshSensors() {
-      int cpuT = (int)HardwareService.GetDisplayCpuTemp();
-      int gpuT = (int)HardwareService.GetDisplayGpuTemp();
-      SysCpuTempText.Text = Strings.SysCPUTemp + ": " + cpuT + " °C";
-      SysGpuTempText.Text = Strings.SysGPUTemp + ": " + gpuT + " °C";
-      int ir = GetSensorTemperature(0);
-      SysIrSensorText.Text = Strings.SysIRSensor + ": " + ir + " °C";
-      int amb = GetSensorTemperature(1);
-      SysAmbientText.Text = Strings.SysAmbient + ": " + amb + " °C";
-      int pch = GetSensorTemperature(2);
-      SysPchText.Text = Strings.SysPCH + ": " + pch + " °C";
-      int vr = GetSensorTemperature(3);
-      SysVrText.Text = Strings.SysVR + ": " + vr + " °C";
-      UpdateExtraTempRows();
+      RefreshSensorsCore(
+          (int)HardwareService.GetDisplayCpuTemp(), (int)HardwareService.GetDisplayGpuTemp(),
+          GetSensorTemperature(0), GetSensorTemperature(1), GetSensorTemperature(2), GetSensorTemperature(3));
       _ = RefreshNvidiaPowerLimitAsync();
     }
 
@@ -1358,10 +1434,12 @@ try { kb = GetKeyboardTypeName((NbKeyboardLightingType)(kbRaw = (int)GetKeyboard
     async Task RefreshNvidiaPowerLimitAsync() {
       try {
         await Task.Delay(500);
-        var powerLimits = GpuAppManager.GetGpuPowerLimits();
+        // ponytail: nvidia-smi 是同步起进程等退出——Task.Delay 恢复后落回 UI 线程,
+        // 裸调会在页面加载/每次预设切换时卡 UI(先例:同文件 RefreshSysInfo 用 Task.Run 包同类查询)。
+        var powerLimits = await Task.Run(() => GpuAppManager.GetGpuPowerLimits());
         if (powerLimits[0] > 0) {
           await Dispatcher.InvokeAsync(() => {
-            SysNvidiaPowerText.Text = Strings.SysNvidiaPowerLimitText($"{powerLimits[0]:F0}W / {powerLimits[1]:F0}W");
+            SetNvidiaPowerRow($"{powerLimits[0]:F0}W / {powerLimits[1]:F0}W");
             ConfigService.SysNvidiaPowerMin = $"{powerLimits[0]:F0}W";
             ConfigService.SysNvidiaPowerMax = $"{powerLimits[1]:F0}W";
           });
@@ -1472,9 +1550,7 @@ try { kb = GetKeyboardTypeName((NbKeyboardLightingType)(kbRaw = (int)GetKeyboard
       if (_gpuAppWindow != null) { _gpuAppWindow.Activate(); return; }
       // ponytail: FluentWindow + Mica 风格,对齐项目 DialogHelper/HelpWindow 约定。
       // 弹窗内 ListBox + 右键菜单,保留定位/结束/首选项全部交互。
-      var bgDeep = (Brush)FindResource("BgDeepBrush");
       var borderSubtle = (Brush)FindResource("BorderSubtleBrush");
-      var accentOmen = (Brush)FindResource("AccentOmenBrush");
 
       var cardBrush = (Brush)FindResource("CardBackgroundFillColorDefaultBrush");
 
@@ -1505,22 +1581,10 @@ try { kb = GetKeyboardTypeName((NbKeyboardLightingType)(kbRaw = (int)GetKeyboard
       outer.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 标题栏
       outer.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 内容卡片
       outer.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 按钮栏
-      var titleBar = new Border {
-        Background = bgDeep, BorderBrush = borderSubtle,
-        BorderThickness = new Thickness(0, 0, 0, 1),
-        Padding = new Thickness(16, 12, 16, 12)
-      };
-      var titlePanel = new StackPanel { Orientation = Orientation.Horizontal };
-      titlePanel.Children.Add(new Wpf.Ui.Controls.SymbolIcon {
-        Symbol = Wpf.Ui.Controls.SymbolRegular.DeviceEq24, FontSize = 18,
-        Foreground = accentOmen, Margin = new Thickness(0, 0, 8, 0),
-        VerticalAlignment = VerticalAlignment.Center
-      });
-      titlePanel.Children.Add(new TextBlock {
-        Text = Strings.GpuAppsMenu, FontSize = 14, FontWeight = FontWeights.SemiBold,
-        VerticalAlignment = VerticalAlignment.Center
-      });
-      titleBar.Child = titlePanel;
+      // ponytail: 原来手搓标题 Border —— ExtendsContentIntoTitleBar 已抹掉原生栏,那个 Border
+      // 既不能拖也没有系统关闭键。收口到 DialogHelper.MakeTitleBar。
+      var titleBar = OmenSuperHub.Utils.DialogHelper.MakeTitleBar(
+        Strings.GpuAppsMenu, Wpf.Ui.Controls.SymbolRegular.DeviceEq24);
       Grid.SetRow(titleBar, 0); outer.Children.Add(titleBar);
 
       // ── 内容卡片 (对齐 DashboardPage 错误弹窗: CardBg + CornerRadius) ──
@@ -1554,6 +1618,10 @@ try { kb = GetKeyboardTypeName((NbKeyboardLightingType)(kbRaw = (int)GetKeyboard
         ResizeMode = ResizeMode.CanResize, MinWidth = 420, MinHeight = 340
       };
       _gpuAppWindow.Closed += (s, _) => { _gpuAppWindow = null; GpuAppList = null; };
+      // ponytail: 关闭前断开 Owner — WPF 的 owned window 关闭时会尝试把焦点/激活还给 owner,
+      // 当 owner 与模态弹窗(DialogHelper)焦点链交错时可能把主窗口误最小化(实测)。
+      // 断开 Owner 后关闭成为独立窗口关闭,不影响主窗口状态。复用共享 helper,勿再内联重复。
+      WindowHelper.DetachOwnerOnClose(_gpuAppWindow);
       RefreshGpuAppList();
       _gpuAppWindow.Show();
     }
@@ -1573,52 +1641,82 @@ try { kb = GetKeyboardTypeName((NbKeyboardLightingType)(kbRaw = (int)GetKeyboard
         return;
       bool ok = false;
       try {
-        // ponytail: try PID first, then fall back to image name (same as manual taskkill /F /IM)
-        var psi = new ProcessStartInfo("taskkill", $"/F /PID {app.ProcessId}") {
-          UseShellExecute = false, CreateNoWindow = true
-        };
-        using (var p = Process.Start(psi)) {
-          if (p != null) { p.WaitForExit(2000); ok = p.ExitCode == 0; }
-        }
-        if (!ok && !string.IsNullOrEmpty(app.ProcessName)) {
-          string imageName = System.IO.Path.GetFileName(app.ProcessName);
-          psi = new ProcessStartInfo("taskkill", $"/F /IM {imageName}") {
+        // ponytail: 优先按映像名杀进程树 (/F /T /IM) —— nvidia-smi 报告的 PID 常是 GPU 子进程
+        // (QQ/Chrome 等多进程应用),只杀单个 PID 会立即被父进程重启,表现为"没结束"。
+        // /T 连带杀整棵进程树,覆盖多进程应用的守护/渲染子进程。imageName 拿不到再回退 /PID。
+        string imageName = string.IsNullOrEmpty(app.ProcessName)
+          ? null
+          : System.IO.Path.GetFileName(app.ProcessName);
+        if (!string.IsNullOrEmpty(imageName)) {
+          var psi = new ProcessStartInfo("taskkill", $"/F /T /IM {imageName}") {
             UseShellExecute = false, CreateNoWindow = true
           };
           using (var p = Process.Start(psi)) {
             if (p != null) { p.WaitForExit(2000); ok = p.ExitCode == 0; }
           }
         }
-	        if (ok)
-	          DialogHelper.Info(Strings.DashboardProcessKilled(app.ProcessName), Strings.Hint);
-	        else
-	          DialogHelper.Warn(Strings.DashboardProcessKillFailed(app.ProcessName), Strings.Hint);
-	      } catch (Exception ex) {
-	        DialogHelper.Error(Strings.DashboardProcessKillError(ex.Message), Strings.Hint);
-	        Logger.Error(Strings.DashboardProcessKillError(ex.Message));
+        if (!ok && app.ProcessId > 0) {
+          var psi = new ProcessStartInfo("taskkill", $"/F /PID {app.ProcessId}") {
+            UseShellExecute = false, CreateNoWindow = true
+          };
+          using (var p = Process.Start(psi)) {
+            if (p != null) { p.WaitForExit(2000); ok = p.ExitCode == 0; }
+          }
+        }
+        if (ok)
+          DialogHelper.Info(Strings.DashboardProcessKilled(app.ProcessName), Strings.Hint);
+        else
+          DialogHelper.Warn(Strings.DashboardProcessKillFailed(app.ProcessName), Strings.Hint);
+      } catch (Exception ex) {
+        DialogHelper.Error(Strings.DashboardProcessKillError(ex.Message), Strings.Hint);
+        Logger.Error(Strings.DashboardProcessKillError(ex.Message));
       }
       RefreshGpuAppList();
     }
 
-    void SetGpuPreference(int value) {
+    // ponytail: 官方文档格式 = HKCU\SOFTWARE\Microsoft\DirectX\UserGpuPreferences 下的 REG_SZ
+    // "GpuPreference=N;"(1=省电 GPU,2=高性能 GPU,值不存在=系统决定)。旧代码往两个键写
+    // DWORD 且取值错位(Auto→2/省电→0/高性能→1),Windows 根本不认,此功能一直静默无效。
+    // AppCompatFlags\GraphicsSettings 键无文档消费方(仓库内也无读回)→ 不再写入。
+    void SetGpuPreference(int officialChoice) {
       var item = GpuAppList.SelectedItem as ListBoxItem;
       var app = item?.Tag as GpuAppManager.GpuAppInfo;
       if (app == null || string.IsNullOrEmpty(app.FilePath)) return;
       try {
         using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(
-            @"SOFTWARE\Microsoft\Windows NT\CurrentVersion\AppCompatFlags\GraphicsSettings"))
-          key?.SetValue(app.FilePath, value, Microsoft.Win32.RegistryValueKind.DWord);
-      } catch { }
-      try {
-        using (var key = Microsoft.Win32.Registry.CurrentUser.CreateSubKey(
-            @"SOFTWARE\Microsoft\DirectX\UserGpuPreferences"))
-          key?.SetValue(app.FilePath, value, Microsoft.Win32.RegistryValueKind.DWord);
-      } catch { }
+            @"SOFTWARE\Microsoft\DirectX\UserGpuPreferences")) {
+          if (key == null) return;
+          var val = BuildGpuPreferenceValue(officialChoice);
+          if (val == null) {
+            // 自动 = 系统决定:删值(旧版残留的 DWORD 垃圾一并删掉,自愈)
+            try { key.DeleteValue(app.FilePath, false); }
+            catch (Exception ex) { Logger.Warn($"[DashboardPage] SetGpuPreference delete '{app.FilePath}': {ex.Message}"); }
+          } else {
+            key.SetValue(app.FilePath, val, Microsoft.Win32.RegistryValueKind.String);
+          }
+        }
+      } catch (Exception ex) {
+        Logger.Warn($"[DashboardPage] SetGpuPreference '{app.FilePath}': {ex.Message}");
+      }
     }
 
-    void GpuAppPrefAuto_Click(object sender, RoutedEventArgs e) { SetGpuPreference(2); }
-    void GpuAppPrefPowerSave_Click(object sender, RoutedEventArgs e) { SetGpuPreference(0); }
-    void GpuAppPrefHighPerf_Click(object sender, RoutedEventArgs e) { SetGpuPreference(1); }
+    // 纯函数:官方编号(0=自动/1=省电/2=高性能)→ 注册表字符串;null = 删值。
+    internal static string BuildGpuPreferenceValue(int officialChoice) =>
+      (officialChoice == 1 || officialChoice == 2) ? $"GpuPreference={officialChoice};" : null;
+
+    public static string GpuPrefSelfCheck() {
+      var fails = new System.Collections.Generic.List<string>();
+      if (BuildGpuPreferenceValue(0) != null) fails.Add("自动应为删值(null)");
+      if (BuildGpuPreferenceValue(1) != "GpuPreference=1;") fails.Add("省电映射错误");
+      if (BuildGpuPreferenceValue(2) != "GpuPreference=2;") fails.Add("高性能映射错误");
+      if (BuildGpuPreferenceValue(9) != null) fails.Add("非法编号应视同 null");
+      return fails.Count == 0 ? "PASS DashboardPage GpuPreference mapping"
+        : "FAIL DashboardPage GpuPreference:\n  " + string.Join("\n  ", fails);
+    }
+
+    void GpuAppPrefAuto_Click(object sender, RoutedEventArgs e) { SetGpuPreference(0); }
+    void GpuAppPrefPowerSave_Click(object sender, RoutedEventArgs e) { SetGpuPreference(1); }
+    void GpuAppPrefHighPerf_Click(object sender, RoutedEventArgs e) { SetGpuPreference(2); }
     void RefreshGpuApps_Click(object sender, RoutedEventArgs e) { RefreshGpuAppList(); }
 
     void RestartGpu_Click(object sender, RoutedEventArgs e) {
@@ -1657,6 +1755,28 @@ try { kb = GetKeyboardTypeName((NbKeyboardLightingType)(kbRaw = (int)GetKeyboard
 
     void HpDriverSearch_Click(object sender, RoutedEventArgs e) {
       try { Process.Start(new ProcessStartInfo("https://support.hp.com/cn-zh/product/detect?source=swd") { UseShellExecute = true })?.Dispose(); } catch { }
+    }
+
+    async void InstallPawnIo_Click(object sender, RoutedEventArgs e) {
+      if (OmenHardware.IsPawnIOInstalled()) return;   // 已安装不重复装
+      PawnIoInstallBtn.IsEnabled = false;
+      PawnIoInstallBtn.Content = Strings.SysPawnInstalling;
+      try {
+        // ponytail: 安装含资源提取 + 安装进程等待,放后台线程以免卡 UI;完成后回读状态刷新按钮/文字。
+        bool ok = await Task.Run(() => OmenHardware.InstallPawnIO());
+        PawnIoInstallBtn.Visibility = ok ? Visibility.Collapsed : Visibility.Visible;
+        if (ok) {
+          SysPawnIoText.Text = Strings.SysPawnInstalled + " (" + OmenHardware.GetPawnIOState() + ")";
+          DialogHelper.Info(Strings.SysPawnInstallSuccess, Strings.Hint);
+        } else {
+          DialogHelper.Error(Strings.SysPawnInstallFailed, Strings.Hint);
+        }
+      } catch (Exception ex) {
+        DialogHelper.Error(Strings.SysPawnInstallFailed + "\n" + ex.Message, Strings.Hint);
+      } finally {
+        PawnIoInstallBtn.IsEnabled = true;
+        PawnIoInstallBtn.Content = Strings.SysPawnInstallBtn;
+      }
     }
   }
 }

@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
 	        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
 	        xmlns:app="clr-namespace:OmenSuperHub"
-	        Width="280"
+	        Width="328"
         WindowStyle="None" AllowsTransparency="True"
         Background="Transparent" Topmost="True"
         ShowInTaskbar="False" ShowActivated="False"
@@ -13,16 +13,22 @@
     <SolidColorBrush x:Key="IconAccentBrush" Color="{DynamicResource AccentOmen}"/>
   </Window.Resources>
 
-  <Border CornerRadius="8"
-          Background="{DynamicResource ContextMenuBackground}"
-          BorderBrush="{DynamicResource BorderDefaultBrush}"
-          BorderThickness="1">
-    <Border.Effect>
-      <DropShadowEffect BlurRadius="32" Direction="270"
-                        Opacity="0.28" ShadowDepth="8"
-                        Color="#000000"/>
-    </Border.Effect>
-
+  <!-- ponytail: 外层 Grid Margin=24 给阴影留白(窗口随之 280→328);背景+阴影放兄弟 Border,
+       正文 Border 独立不挂 Effect → 内部文字保住 ClearType。 -->
+  <Grid Margin="24">
+    <!-- 背景/圆角/阴影层(仅此层被栅格化) -->
+    <Border CornerRadius="8"
+            Background="{DynamicResource ContextMenuBackground}"
+            BorderBrush="{DynamicResource BorderDefaultBrush}"
+            BorderThickness="1">
+      <Border.Effect>
+        <DropShadowEffect BlurRadius="32" Direction="270"
+                          Opacity="0.28" ShadowDepth="8"
+                          Color="#000000"/>
+      </Border.Effect>
+    </Border>
+    <!-- 正文层(透明,无 Effect,保 ClearType) -->
+    <Border CornerRadius="8">
     <StackPanel>
 
       <!-- ── Header ── -->
@@ -133,5 +139,6 @@
 
       </Grid>
     </StackPanel>
-  </Border>
+    </Border>
+  </Grid>
 </Window>

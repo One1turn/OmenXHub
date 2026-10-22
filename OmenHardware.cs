@@ -7,7 +7,6 @@ using System.Management;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using HP.Omen.Core.Model.Device.Models;
-using HP.Omen.Core.Model.Device.Enums;
 using HP.Omen.Core.Common.PowerControl;
 
 namespace OmenSuperHub {
@@ -36,19 +35,60 @@ namespace OmenSuperHub {
       if (_wmiScope == null) {
         lock (_scopeLock) {
           if (_wmiScope == null) {
-            _wmiScope = new ManagementScope(@"root\wmi");
-            _wmiScope.Connect();
+            // ponytail: 先建局部再提交 —— Connect() 在 WMI 服务停用/RPC 断链时抛异常,
+            // 直接赋 _wmiScope 会留下"已赋值但未连接"的对象,破坏健康门把 null 当
+            // "未连接"的语义,下次调用拿坏 scope 空转。
+            var scope = new ManagementScope(@"root\wmi");
+            scope.Connect();
+            _wmiScope = scope;
           }
         }
       }
       return _wmiScope;
     }
 
+    // ─── WMI 通道健康门（开机冷窗口退避） ─────────────────────────────
+    // ponytail: 实测(2026-09-30 严查)开机后 EC 会短暂不响应(内核 ACPI Id=13"嵌入式控制器
+    // 未响应",HP WMI 桥依赖 EC),旧行为两宗罪:①fanControlTimer 1Hz 无条件 0x27+0x2E 对冷
+    // EC 狂写(3min≈400 发,失败零退避),未提权会话还叠加 PawnIO 直写兜底;②只有 Management-
+    // Exception 会丢弃缓存 scope,AccessDenied/COMException 失败持续到重启(评审 #31)。
+    // 健康门:失败即计数并按 1s×2^n 退避(30s 封顶),退避期内所有 SendOmenBiosWmi 快速短路
+    // 返回 null(省 WMI/PawnIO churn,风扇/温度显示冻结属预期);到期放行一发探测,成功即归零
+    // 恢复 1Hz。EC 就绪后整条链自动复活,无需重启 app。天花板:开机期一次性下发(RestoreConfig/
+    // ApplyPresetHardware)撞上冷窗口仍会失败且不重试 —— 风扇曲线由 fanControlTimer 恢复后
+    // 自愈,功率限制等需等下次电源事件/用户操作。
+    static int _wmiFailStreak;
+    static DateTime _wmiGateOpenUtc = DateTime.MinValue;
+
+    /// <summary>连续失败 n 次后的退避时长:1s,2s,4s,8s,16s,30s,30s…(封顶)。</summary>
+    internal static TimeSpan WmiBackoffDelay(int failStreak) =>
+      TimeSpan.FromMilliseconds(Math.Min(30000, 1000L << Math.Min(Math.Max(failStreak - 1, 0), 5)));
+
+    /// <summary>健康门是否放行(退避期满)。所有 EC 写与 0x23 读都应先问这一下。</summary>
+    public static bool WmiGateOpen {
+      get { lock (_scopeLock) return DateTime.UtcNow >= _wmiGateOpenUtc; }
+    }
+
+    static void NoteWmiFailure() {
+      lock (_scopeLock) {
+        _wmiFailStreak++;
+        _wmiGateOpenUtc = DateTime.UtcNow + WmiBackoffDelay(_wmiFailStreak);
+      }
+    }
+
+    static void NoteWmiSuccess() {
+      lock (_scopeLock) {
+        _wmiFailStreak = 0;
+        _wmiGateOpenUtc = DateTime.MinValue;
+      }
+    }
+
     // ─── WMI Communication ────────────────────────────────────────────
     public static byte[] SendOmenBiosWmi(uint commandType, byte[] data, int outputSize, uint command = 0x20008) {
       const string className = "hpqBIntM";
+      // 退避期内快速短路:不碰 WMI,不触发 PawnIO 兜底,不让 1Hz 心跳对着冷 EC 空转
+      if (!WmiGateOpen) return null;
       string methodName = "hpqBIOSInt" + outputSize.ToString();
-      var scope = GetWmiScope();
 
       if (Services.ConfigService.VerboseLogging) {
         string dataHex = data != null ? BitConverter.ToString(data).Replace("-", " ") : "null";
@@ -56,6 +96,10 @@ namespace OmenSuperHub {
       }
 
       try {
+        // ponytail: scope 获取必须在 try 内 —— GetWmiScope 的 Connect() 在 WMI 不可达时
+        // 抛异常,放外面会让异常上溢到调用方:线程池上的调用方(双写 worker)直接终止进程,
+        // 且 NoteWmiFailure 退避门对"连不上"这种最典型的失败完全不生效。
+        var scope = GetWmiScope();
         // ponytail: _scopeLock 串行化整个 BIOS WMI 调用 — hpqBIntM 方法对象缓存后是共享
         // COM 状态,并发 Invoke 有竞态;BIOS 通道本身串行,锁不损失吞吐。
         lock (_scopeLock) {
@@ -69,6 +113,7 @@ namespace OmenSuperHub {
           }
           if (_biosMethods == null) {
             Logger.Error($"SendOmenBiosWmi: {className} WMI class not found!");
+            NoteWmiFailure();   // 非 HP 机型/WMI 未就绪:同样退避,别 1Hz 空枚举
             return null;
           }
 
@@ -93,6 +138,7 @@ namespace OmenSuperHub {
 
                   if (returnCode == 0) {
                     Logger.Verbose($"SendOmenBiosWmi: SUCCESS CmdType=0x{commandType:X2} ReturnCode=0");
+                    NoteWmiSuccess();
                     if (outputSize != 0)
                       return (byte[])outData["Data"];
                     else
@@ -102,6 +148,7 @@ namespace OmenSuperHub {
                     // (而非状态码 0),导致误报错误。检测到此情况时降级为 Verbose 日志。
                     if (commandType == 0x2E && returnCode == 0x2E) {
                       Logger.Verbose($"SendOmenBiosWmi: CmdType=0x{commandType:X2} executed, fan RPM={returnCode} (Omen 6 BIOS quirk)");
+                      NoteWmiSuccess();
                       return Array.Empty<byte>();
                     }
                     string errorMessage = "";
@@ -124,8 +171,18 @@ namespace OmenSuperHub {
           _biosMethods = null;
           _wmiScope = null;
         }
+        NoteWmiFailure();
       } catch (Exception ex) {
         Logger.Error($"SendOmenBiosWmi: EXCEPTION CmdType=0x{commandType:X2}: {ex.Message}");
+        // ponytail: 评审 #31 —— AccessDenied/COMException/RPC 不可用等同样失效缓存 scope,
+        // 否则开机踩 EC 冷窗口/睡眠恢复断连后所有 BIOS 通道持续失败到进程重启。退避由
+        // NoteWmiFailure 统一计,重连在退避期满后的首次探测自然发生。
+        lock (_scopeLock) {
+          _biosMethods?.Dispose();
+          _biosMethods = null;
+          _wmiScope = null;
+        }
+        NoteWmiFailure();
       }
       return null;
     }
@@ -205,9 +262,21 @@ namespace OmenSuperHub {
       }
     }
 
-    public static bool IsThreeFanSupported() {
-      GetFanType(out var types, out _);
-      return types.Count > 2 && types[2] != FanType.Unsupported;
+    // ponytail: 三风扇缓存判定 —— IsThreeFanSupported() 每次发 WMI(0x2C)，心跳每秒调用
+    // 会多一次 BIOS 往返。风扇数量是机器固定属性,进程内探测一次缓存。
+    static bool _is3FanCached;
+    static bool _is3Fan;
+    public static bool IsThreeFan() {
+      if (!_is3FanCached) {
+        GetFanType(out var types, out _);
+        // ponytail: GetFanType 返回空 = WMI 未就绪/命令失败 — 空结果不缓存,下个 fan tick 重探,
+        // 与 GetSystemDesignData 失败不缓存同一惯例;否则冷启动首探失败会把三扇机型
+        // 锁死成 false 整个会话(第三扇曲线/UI 永远消失)。
+        if (types.Count == 0) return false;
+        _is3Fan = types.Count > 2 && types[2] != FanType.Unsupported;
+        _is3FanCached = true;
+      }
+      return _is3Fan;
     }
 
     public static bool IsCleanCreekSupported() {
@@ -244,24 +313,49 @@ namespace OmenSuperHub {
     }
 
     public static void SetFanLevel(int fanSpeed1, int fanSpeed2, bool fan3 = false, bool fanClean = false) {
+      SetFanLevelInternal(fanSpeed1, fanSpeed2, null, fanClean, fan3);
+    }
+
+    // ponytail: 独立第三扇 —— 第 3 字节写独立值而非均值。OSH 参考实现只用均值(无第三扇
+    // 温度源时的保守策略),但 byte 槽本身接受任意 0-255,独立曲线经此重载下发。
+    // fanSpeed3 为 null 时回退均值语义(与三参重载一致)。
+    public static void SetFanLevel(int fanSpeed1, int fanSpeed2, int? fanSpeed3) {
+      SetFanLevelInternal(fanSpeed1, fanSpeed2, fanSpeed3, false, fanSpeed3.HasValue);
+    }
+
+    // R15/BUG-R15-1: EC 风扇槽位是 byte,调用方传百分比(0-100)。旧实现直接 (byte) 强转,
+    // 负值走补码截断(-1 → 0xFF=255,向 EC 写"最高速",与语义完全相反),>255 截断。
+    // 纯防御钳位:合法 0-100 值原样通过,仅拦截越界输入,零回归。
+    static byte ClampFanByte(int v) => (byte)(v < 0 ? 0 : v > 255 ? 255 : v);
+
+    static void SetFanLevelInternal(int fanSpeed1, int fanSpeed2, int? fanSpeed3, bool fanClean, bool fan3) {
       byte[] data = new byte[fan3 ? 3 : 2];
       if (fanClean) {
         GetFanType(out var types, out var capabilities);
         var caps = capabilities.Take(types.Count).ToList();
-        data[0] = (byte)(caps[0] ? fanSpeed1 + 128 : fanSpeed1);
-        data[1] = (byte)(caps[1] ? fanSpeed2 + 128 : fanSpeed2);
+        // R15/BUG: GetFanType 返回空(WMI 未就绪/失败)时 caps 可能不足 2-3 项,旧实现 caps[0..2]
+        // 直接越界。边界安全索引:槽位缺失按"该扇不支持逆转"处理 → 写正常转速(比盲发 +128 安全)。
+        bool Cap(int i) => i < caps.Count && caps[i];
+        data[0] = ClampFanByte(Cap(0) ? fanSpeed1 + 128 : fanSpeed1);
+        data[1] = ClampFanByte(Cap(1) ? fanSpeed2 + 128 : fanSpeed2);
         if (fan3) {
-          data[2] = (byte)(caps[2] ? (fanSpeed1 + fanSpeed2) / 2 + 128 : (fanSpeed1 + fanSpeed2) / 2);
+          int v = fanSpeed3 ?? (fanSpeed1 + fanSpeed2) / 2;
+          data[2] = ClampFanByte(Cap(2) ? v + 128 : v);
         }
       } else {
-        data[0] = (byte)fanSpeed1;
-        data[1] = (byte)fanSpeed2;
-        if (fan3) data[2] = (byte)((fanSpeed1 + fanSpeed2) / 2);
+        data[0] = ClampFanByte(fanSpeed1);
+        data[1] = ClampFanByte(fanSpeed2);
+        if (fan3) {
+          int v = fanSpeed3 ?? (fanSpeed1 + fanSpeed2) / 2;
+          data[2] = ClampFanByte(v);
+        }
       }
       // ponytail: 暗影精灵 6 等老机型 WMI BIOS 可能失败,失败时降级到 EC 直接读写
-      // (需 PawnIO 驱动; 参考 OmenMon 项目的 EC 寄存器表)
+      // (需 PawnIO 驱动; 参考 OmenMon 项目的 EC 寄存器表)。WmiGateOpen 条件:健康门
+      // 刚关闭(首次失败即闭)时跳过直写 —— 冷窗口期对未就绪的 EC 做 LPC 端口直写正是
+      // 内核 EC 看门狗超时的嫌疑通道;门重开(退避期满)后若 WMI 仍失败会自然再进此兜底。
       var result = SendOmenBiosWmi(0x2E, data, 0);
-      if (result == null && Services.EcFanService.IsAvailable) {
+      if (result == null && WmiGateOpen && Services.EcFanService.IsAvailable) {
         Logger.Verbose($"[OmenHardware] WMI SetFanLevel failed, EC fallback: {fanSpeed1}%, {fanSpeed2}%");
         Services.EcFanService.SetFanSpeed(fanSpeed1, fanSpeed2);
       }
@@ -305,25 +399,6 @@ namespace OmenSuperHub {
     }
 
     public enum ThermalPolicyVersion { V0 = 0, V1 = 1 }
-
-    // ─── Diagnostics ──────────────────────────────────────────────────
-    public static void PrintSystemDesignData() {
-      byte[] data = GetSystemDesignData();
-      if (data == null || data.Length < 12) { Logger.Error("[ERROR] SystemDesignData 获取失败或长度不足"); return; }
-      Console.WriteLine("========== System Design Data ==========");
-      Console.WriteLine($"完整数据: {BitConverter.ToString(data)}");
-      int adapterPower = data[0] | (data[1] << 8);
-      Console.WriteLine($"[0]-[1] 适配器功率 = {adapterPower} W");
-      Console.WriteLine($"[3] ThermalPolicyVersion = {data[3]}");
-      byte b4 = data[4];
-      Console.WriteLine($"[4] 平台特性 = 0x{b4:X2}  Bit0(SwFanControl)={(b4 & 0x01) != 0} Bit1(TurboMode)={(b4 & 0x02) != 0}");
-      Console.WriteLine($"[5] PL4_Default = {data[5]}W");
-      Console.WriteLine($"[8] DefaultConcurrentTdp = {data[8]}");
-      byte b9 = data[9];
-      Console.WriteLine($"[9] LoadLine 支持级别={b9 & 0x0F} 默认级别={(b9 >> 4) & 0x0F}");
-      byte b10 = data[10];
-      Console.WriteLine($"[10] 传感器: IR={(b10 & 0x01) != 0} Ambient={(b10 & 0x02) != 0} PCH={(b10 & 0x04) != 0} VR={(b10 & 0x08) != 0}");
-    }
 
     public static ThermalPolicyVersion GetThermalPolicyVersion() {
       byte[] data = GetSystemDesignData();
@@ -406,6 +481,26 @@ namespace OmenSuperHub {
       SendOmenBiosWmi(0x1A, new byte[] { 0xFF, ecCommand }, 0);
     }
 
+    // ponytail: V0/V1 兼容映射 —— 项目历史沿用裸字节 0x31(Unleash)/0x30(Default)，但这两值
+    // 的语义按 ThermalPolicy 版本而异(OSH 已验证表)：V1 下 0x31=L7=Performance/Unleash；
+    // V0 映射表无 L7 条目，黑名单老机(8607/8746/8747/8749/874A/8748)盲发 0x31 是未定义行为。
+    // 统一经本辅助按机型版本映射成安全 EC 值；V1 机映射结果与原字节一致(零回归)，
+    // 仅 V0 黑名单机被矫正到 V0 表的安全档。
+    public static byte GetEcPerformanceCommand(byte legacyCommand) {
+      // 0x31(Unleash/Performance) 与 0x30(Default/平衡) 是仅有的两个历史值
+      bool unleash = legacyCommand == 0x31;
+      ThermalPolicyVersion version = GetThermalPolicyVersion();
+      if (version == ThermalPolicyVersion.V1)
+        return unleash ? (byte)PerformanceMode.L7 : (byte)PerformanceMode.L2;
+      // V0: OSH 表 —— Eco/Default 语义档直接用枚举值; Unleash 在 V0 无对应档,回退 Default。
+      return unleash ? (byte)PerformanceMode.Default : (byte)PerformanceMode.Default;
+    }
+
+    /// <summary>按机型 ThermalPolicy 版本矫正后的风扇模式写入(全工程 SetFanMode((byte)) 调用应改走此入口)。</summary>
+    public static void SetFanModeCompat(byte legacyCommand) {
+      SendOmenBiosWmi(0x1A, new byte[] { 0xFF, GetEcPerformanceCommand(legacyCommand) }, 0);
+    }
+
     // ─── CPU Power ────────────────────────────────────────────────────
     // ponytail: 0x29 (PL1/PL2/PL4/TPP) 在狂暴和平衡模式下都生效（参考 OSH 注释
     // "狂暴平衡都生效"），所以这里不耦合 SetUnleashMode()。OSH 参考实现里这些 setter
@@ -416,23 +511,101 @@ namespace OmenSuperHub {
     // BIOS 默认值重置 CPU 功耗限制，覆盖刚写入的 0x29 值。表现为 Omen Transcend 16
     // (8bb3 / i7-13700HX) 等机型 "power limits do not apply to CPU"。
     // Unleash 模式仍由 App.xamlcs 启动、PresetManager、TrayService 等独立设置。
+    // ─── EC 模式双重写入（MSR 直写 + WMI 0x29）────────────────────────
+    // EnableEcAccess 开启且 RAPL 0x610 可写时，功率墙两条通道都发：MSR 直写（带回读
+    // 验证，权威）+ WMI 0x29 补发（同步 EC 侧状态）。WMI 半程延迟 DualSendIntervalMs
+    // 在线程池发出：MSR 先落定再间隔补发，不阻塞 UI/预设回放线程。窗口内的 PL1/PL2
+    // 变更合并进同一载荷（0x29 一次带 [PL2,PL1] 两个字段），拖滑杆等快速连续调用只发
+    // 最新值且按提交序 —— 最终状态与 MSR 侧一致；EC 收到乱序旧值反而会改错最终状态。
+    const int DualSendIntervalMs = 200;
+    static readonly object _dualWmiLock = new object();
+    static byte? _dualPl1, _dualPl2;
+    static bool _dualWorkerRunning;
+
+    /// <summary>0x29 载荷 [PL2, PL1, PL4, TPP]，null 字段用 0xFF"保持原值"哨兵。纯函数，SelfCheck 覆盖。</summary>
+    internal static byte[] EncodeDualWmiPayload(byte? pl1, byte? pl2) {
+      return new byte[] { pl2 ?? (byte)0xFF, pl1 ?? (byte)0xFF, 0xFF, 0xFF };
+    }
+
+    static void QueueDualWmiSend(byte? pl1, byte? pl2) {
+      lock (_dualWmiLock) {
+        // ponytail: null = 该字段不动，不清另一槽位 —— PL1Only/PL2Only 连发时两个
+        // 变更合并进一次载荷，等价于两次独立发送且不丢字段。
+        if (pl1.HasValue) _dualPl1 = pl1;
+        if (pl2.HasValue) _dualPl2 = pl2;
+        if (_dualWorkerRunning) return;
+        _dualWorkerRunning = true;
+      }
+      System.Threading.ThreadPool.QueueUserWorkItem(_ => {
+        // ponytail: 工作体整体兜底 —— SendOmenBiosWmi 若抛(WMI 断链),线程池上未捕获
+        // 异常直接终止进程(R15/BUG-22 同款);且 _dualWorkerRunning 原先只在"槽位空"
+        // 分支复位,线程被打断后标志永真,后续 PL1/PL2 的 EC 侧 0x29 补发整场静默丢失。
+        // 注意:正常退出必须在锁内复位标志(否则与"刚好排队进来的新值"交错会出现两个
+        // worker);异常路径才在 finally 里复位并重拉一次,把排队中的值消费掉。
+        bool normalExit = false;
+        try {
+          while (true) {
+            System.Threading.Thread.Sleep(DualSendIntervalMs);
+            byte? p1, p2;
+            lock (_dualWmiLock) {
+              p1 = _dualPl1; p2 = _dualPl2;
+              _dualPl1 = _dualPl2 = null;
+              if (p1 == null && p2 == null) { _dualWorkerRunning = false; normalExit = true; return; }
+            }
+            SendOmenBiosWmi(0x29, EncodeDualWmiPayload(p1, p2), 0);
+          }
+        } catch (Exception ex) {
+          Logger.Error($"[DualWmi] worker 异常终止: {ex.Message}");
+        } finally {
+          if (!normalExit) {
+            bool pending;
+            lock (_dualWmiLock) {
+              _dualWorkerRunning = false;
+              pending = _dualPl1.HasValue || _dualPl2.HasValue;
+            }
+            // 异常窗口内排队的新值不能丢 —— 有待发值才重拉(空转一次线程没必要)。
+            if (pending) QueueDualWmiSend(null, null);
+          }
+        }
+      });
+    }
+
+    /// <summary>MSR 写失败走 WMI 同步兜底前调用：清空待发槽，防止晚到的队列补发覆盖刚发出的兜底值。</summary>
+    static void ClearDualWmiPending() {
+      lock (_dualWmiLock) { _dualPl1 = _dualPl2 = null; }
+    }
+
     /// <summary>Set both PL1 and PL2 to the same value (backward compat).</summary>
     public static bool SetCpuPowerLimit(byte value) {
       return SetCpuPowerLimit(value, value);
     }
     /// <summary>Set PL1 and PL2 independently.</summary>
+    // EnableEcAccess 开启且 RAPL 0x610 可写时双重发送（见上方 EC 模式双重写入）；
+    // MSR 被拒则立即同步走 WMI 兜底（原有行为，返回语义不变）。
     public static bool SetCpuPowerLimit(byte pl1, byte pl2) {
+      if (Services.RaplPowerLimitService.ShouldHandlePowerLimit) {
+        if (Services.RaplPowerLimitService.TrySetPowerLimits(pl1, pl2)) { QueueDualWmiSend(pl1, pl2); return true; }
+        ClearDualWmiPending();
+      }
       var result = SendOmenBiosWmi(0x29, new byte[] { pl2, pl1, 0xFF, 0xFF }, 0);
       return result != null;
     }
 
     /// <summary>Set PL1 only, PL2 unchanged.</summary>
     public static bool SetCpuPowerLimitPL1Only(byte pl1) {
+      if (Services.RaplPowerLimitService.ShouldHandlePowerLimit) {
+        if (Services.RaplPowerLimitService.TrySetPowerLimits(pl1, null)) { QueueDualWmiSend(pl1, null); return true; }
+        ClearDualWmiPending();
+      }
       var result = SendOmenBiosWmi(0x29, new byte[] { 0xFF, pl1, 0xFF, 0xFF }, 0);
       return result != null;
     }
     /// <summary>Set PL2 only, PL1 unchanged.</summary>
     public static bool SetCpuPowerLimitPL2Only(byte pl2) {
+      if (Services.RaplPowerLimitService.ShouldHandlePowerLimit) {
+        if (Services.RaplPowerLimitService.TrySetPowerLimits(null, pl2)) { QueueDualWmiSend(null, pl2); return true; }
+        ClearDualWmiPending();
+      }
       var result = SendOmenBiosWmi(0x29, new byte[] { pl2, 0xFF, 0xFF, 0xFF }, 0);
       return result != null;
     }
@@ -469,11 +642,18 @@ namespace OmenSuperHub {
 
     // ─── IccMax ───────────────────────────────────────────────────────
     public static void SetIccMaxByWmi(decimal iccMaxAmpere) {
+      // R15/BUG-R15-2: EC 有效域是 {0} ∪ [160,255](PerfPage 注释:1-159 是死区,sub-160 触发
+      // throttling/hang)。UI 路径已自行钳制,但 HardwareApiService 的 HTTP 门只校验 50-250,
+      // 会把 50-159 原样下发。库边界统一钳制,覆盖所有调用方:负值丢弃,1-159 抬到 160,>255 截到 255。
+      int amp = (int)iccMaxAmpere;
+      if (amp < 0) return;
+      if (amp > 0 && amp < 160) amp = 160;
+      if (amp > 255) amp = 255;
       byte[] inputData = new byte[128];
       inputData[0] = 0;
       inputData[1] = 15;
-      inputData[2] = (byte)((int)iccMaxAmpere & 0xFF);
-      inputData[3] = (byte)(((int)iccMaxAmpere >> 8) & 0xFF);
+      inputData[2] = (byte)(amp & 0xFF);
+      inputData[3] = (byte)((amp >> 8) & 0xFF);
       SendOmenBiosWmi(0x37, inputData, 0);
     }
 
@@ -493,6 +673,15 @@ namespace OmenSuperHub {
     }
 
     public static void SetLoadLine(int level) {
+      // R15/BUG-R15-2: level 是档位索引(UI 只发 0-15,上限 GetLoadLineSupportLevels()=data[9]&0x0F)。
+      // HardwareApiService 的 HTTP 门却按 80-130 校验(疑似把"80-130 mΩ"当档位),会把 80-130
+      // 这种远超机型档数的值写进 EC。库边界按支持档数拦截:0 视为"不设置"直接透传(与 UI 一致),
+      // 越界档位丢弃。
+      if (level < 0) return;
+      if (level > 0) {
+        int max = GetLoadLineSupportLevels();
+        if (max > 0 && level > max) return;
+      }
       byte[] inputData = new byte[128];
       inputData[0] = 0;
       inputData[1] = 13;
@@ -505,6 +694,64 @@ namespace OmenSuperHub {
       inputData[0] = 0; inputData[1] = 13;
       byte[] result = SendOmenBiosWmi(0x37, inputData, 4);
       return (result != null && result.Length > 2) ? result[2] : -1;
+    }
+
+    // ─── CPU 电压偏移 (HP BIOS 通道, 0x35/0x36/0x37) ───────────────────
+    // ponytail: 与 IccMax/LoadLine 同一条 0x37 通道,只是 data[0..1] 目标不同(IccMax=00 0F、
+    // LoadLine=00 0D、CPU 电压=00 03)。协议参考 omen-undervolt(MIT) docs/safety.md:
+    //   data[2]=1 零/正偏移、0 负偏移;data[3..4]=幅度,大端,mV。
+    // 2026-10-21 本机(暗影精灵 9 / RPLHXR_N22X2X4X6)实测:
+    //   0x35 能力查询 → data[2]=0x02(bit0=0);0x36 读取正常返回 0 mV;
+    //   0x37 写入无论幅度正负/载荷长度 4|128/输出 0|4|128/ID 字节序,一律 rwReturnCode=0x1。
+    // 结论:本机固件只开放读,不开放写。写入路径按 0x35 bit0 门控,不支持时 UI 只读展示,
+    // 换机型若固件置位即可用 —— 但**写入语义(待重启生效、无自动回滚)未在本机验证过**,
+    // 首次在支持的机器上启用前必须先确认偏移能回读到非零值,否则不要相信"已接受"。
+    const uint CpuVoltageTarget = 0x03;
+    const int CpuVoltageMaxMagnitudeMv = 200;
+
+    /// <summary>0x35 能力查询:data[2] bit0 置位表示 BIOS 开放处理器电压偏移写入。
+    /// 注意输出必须走 hpqBIOSInt128(输出 4 字节会返回 0x5 输入输出尺寸过小)。</summary>
+    public static bool IsCpuVoltageOffsetSupported() {
+      byte[] data = SendOmenBiosWmi(0x35, new byte[4], 128);
+      return data != null && data.Length >= 3 && (data[2] & 0x01) != 0;
+    }
+
+    /// <summary>0x36 读当前处理器电压偏移(mV)。负值=降压。读取失败返回 null。
+    /// 返回长度必须 ≥9 且头部为 00 03,否则视为非本目标数据。</summary>
+    public static int? GetCpuVoltageOffsetMv() {
+      byte[] data = SendOmenBiosWmi(0x36, new byte[] { 0x00, (byte)CpuVoltageTarget, 0x00, 0x00 }, 128);
+      if (data == null || data.Length < 9 || data[0] != 0x00 || data[1] != CpuVoltageTarget) return null;
+      int magnitude = (data[3] << 8) | data[4];
+      return data[2] == 0 ? -magnitude : magnitude;
+    }
+
+    /// <summary>0x37 写处理器电压偏移。offsetMv 必须为负(降压)或 0(恢复);幅度上限 200 mV。
+    /// 返回 true 仅表示 BIOS 接受了请求 —— 实际生效需重启,且本机固件不支持写入。</summary>
+    public static bool SetCpuVoltageOffsetMv(int offsetMv) {
+      byte[] data = EncodeCpuVoltageOffset(offsetMv);
+      if (data == null) return false;
+      byte[] result = SendOmenBiosWmi(0x37, data, 128);
+      return result != null;
+    }
+
+    /// <summary>0x37 载荷编码(纯函数,自检用)。越界返回 null。</summary>
+    internal static byte[] EncodeCpuVoltageOffset(int offsetMv) {
+      if (offsetMv > 0 || offsetMv < -CpuVoltageMaxMagnitudeMv) return null;
+      int magnitude = Math.Abs(offsetMv);
+      byte[] data = new byte[128];
+      data[0] = 0x00;
+      data[1] = (byte)CpuVoltageTarget;
+      data[2] = (byte)(offsetMv == 0 ? 1 : 0);   // 1=零/正, 0=负
+      data[3] = (byte)(magnitude >> 8);          // 大端
+      data[4] = (byte)(magnitude & 0xFF);
+      return data;
+    }
+
+    /// <summary>0x36 响应解码(纯函数,自检用)。头部不符或过短返回 null。</summary>
+    internal static int? DecodeCpuVoltageOffset(byte[] data) {
+      if (data == null || data.Length < 9 || data[0] != 0x00 || data[1] != CpuVoltageTarget) return null;
+      int magnitude = (data[3] << 8) | data[4];
+      return data[2] == 0 ? -magnitude : magnitude;
     }
 
     // ─── GPU ──────────────────────────────────────────────────────────
@@ -590,7 +837,7 @@ namespace OmenSuperHub {
       string ver = PawnIORegVersion;
       if (string.IsNullOrEmpty(ver)) return "驱动未安装";
 
-      var result = GpuAppManager.ExecuteCommand("sc query PawnIO");
+      var result = Services.TrayService.ExecuteCommand("sc query PawnIO");
       if (result.ExitCode != 0) return "v" + ver + " (驱动未加载)";
 
       var lines = result.Output.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
@@ -606,6 +853,68 @@ namespace OmenSuperHub {
         }
       }
       return "v" + ver + " (Unknown)";
+    }
+
+    // ─── PawnIO 驱动安装 ────────────────────────────────────────────────
+    /// <summary>
+    /// 自带安装：从嵌入资源提取 PawnIO 安装程序到临时目录，以 -install 静默安装。
+    /// 应用已 requireAdministrator 提权，安装进程继承管理员权限，无需二次 RunAs。
+    /// 已安装则直接返回成功；安装后等待注册表落盘并回读确认结果，临时文件始终清理。
+    /// </summary>
+    public static bool InstallPawnIO() {
+      if (IsPawnIOInstalled()) return true;
+      // ponytail: 加固(非完整 TOCTOU 闭环) —— ①随机文件名,消除"固定名预置/残留劫持";
+      // ②写后回读 SHA256 与资源流比对,捕获落盘被替换;③ACL 去继承+当前用户 FullControl
+      // (注意:SetAccessRuleProtection 只断继承,不清显式规则;FullControl 也挡不住同用户
+      // 进程替换 —— 对本机威胁模型,攻击者本就有同用户代码执行能力,这一层是纵深防御)。
+      // ACL 设置失败继续执行是有意的降级路径。已知残余:回读校验与 CreateProcess 打开
+      // 文件之间仍有毫秒级窗口,根治需要只有管理员/SYSTEM 可写的目录承载载荷。
+      string tempExe = System.IO.Path.Combine(System.IO.Path.GetTempPath(),
+          $"OmenXHub_PawnIO_setup_{Guid.NewGuid():N}.exe");
+      try {
+        byte[] payload;
+        using (var rs = Assembly.GetExecutingAssembly().GetManifestResourceStream("OmenSuperHub.Resources.PawnIO_setup.exe")) {
+          if (rs == null) { Logger.Error("[PawnIO] 内嵌安装资源缺失，无法安装"); return false; }
+          using (var ms = new System.IO.MemoryStream()) { rs.CopyTo(ms); payload = ms.ToArray(); }
+        }
+        string expectedHash;
+        using (var sha = System.Security.Cryptography.SHA256.Create())
+          expectedHash = BitConverter.ToString(sha.ComputeHash(payload));
+
+        System.IO.File.WriteAllBytes(tempExe, payload);
+        try {
+          var sec = new System.IO.FileInfo(tempExe).GetAccessControl();
+          sec.SetAccessRuleProtection(true, false);   // 断继承:不留 Everyone/其他账户写位
+          sec.AddAccessRule(new System.Security.AccessControl.FileSystemAccessRule(
+              System.Security.Principal.WindowsIdentity.GetCurrent().User,
+              System.Security.AccessControl.FileSystemRights.FullControl,
+              System.Security.AccessControl.AccessControlType.Allow));
+          System.IO.File.SetAccessControl(tempExe, sec);
+        } catch (Exception aclEx) {
+          Logger.Warn($"[PawnIO] 临时文件 ACL 加固失败(继续安装): {aclEx.Message}");
+        }
+
+        string actualHash;
+        using (var sha = System.Security.Cryptography.SHA256.Create())
+          actualHash = BitConverter.ToString(sha.ComputeHash(System.IO.File.ReadAllBytes(tempExe)));
+        if (actualHash != expectedHash) {
+          Logger.Error("[PawnIO] 临时安装器回读哈希与内嵌资源不一致，拒绝执行");
+          return false;
+        }
+
+        // ponytail: -install 静默安装；UseShellExecute=false 直接执行以继承本进程管理员权限。
+        using (var p = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(tempExe, "-install") { UseShellExecute = false })) {
+          p?.WaitForExit();
+        }
+        // 给驱动注册表写入留出落盘窗口（同安装器自身的异步收尾），再回读确认。
+        System.Threading.Thread.Sleep(2000);
+        return IsPawnIOInstalled();
+      } catch (Exception ex) {
+        Logger.Error("[PawnIO] 安装失败: " + ex.Message);
+        return false;
+      } finally {
+        try { if (System.IO.File.Exists(tempExe)) System.IO.File.Delete(tempExe); } catch { }
+      }
     }
 
     // ─── Keyboard Backlight (Basic WMI) ───────────────────────────────
@@ -947,6 +1256,9 @@ namespace OmenSuperHub {
     // queries the SDK before it's ready and caches false forever.
     private static bool? _isGamingProduct;
     public static bool IsGamingProduct(string displayName) {
+      // R15/BUG-R15-3: displayName 来自 SDK/WMI,二者都取不到时可为 null —— 旧实现
+      // displayName.Contains 直接 NRE,被调用方空 catch 吞掉,整机校验等级恒 0(产品徽标降级)。
+      if (string.IsNullOrEmpty(displayName)) return false;
       if (!_isGamingProduct.HasValue) {
         _isGamingProduct = false;
 
@@ -965,6 +1277,73 @@ namespace OmenSuperHub {
       return _isGamingProduct.Value;
     }
 
+    // ─── Victus/光影 识别（EnableEcAccess 默认值用）────────────────────
+    // 光影系列（Win32 model 含 "Victus"；老光影精灵为 "Pavilion Gaming"）的 WMI 0x29
+    // 功率墙路径不可靠（docs/MEMORY_POWER_THERMAL_DIAGNOSTICS.md："WMI 返回成功 ≠ 实际
+    // 生效"），该系列默认走 RAPL 直写。只查 WMI model，不依赖 HP SDK 初始化时机
+    // （ConfigService.Load 在 SDK 就绪前运行）。结果缓存，进程内只查一次。
+    static bool? _isVictusModel;
+    public static bool IsVictusModel() {
+      if (_isVictusModel.HasValue) return _isVictusModel.Value;
+      try {
+        using (var s = new ManagementObjectSearcher("SELECT Model FROM Win32_ComputerSystem"))
+          foreach (ManagementObject o in s.Get())
+            using (o) {
+              string m = Convert.ToString(o["Model"]);
+              _isVictusModel = !string.IsNullOrEmpty(m)
+                && (m.IndexOf("Victus", StringComparison.OrdinalIgnoreCase) >= 0
+                    || m.IndexOf("Pavilion Gaming", StringComparison.OrdinalIgnoreCase) >= 0);
+              return _isVictusModel.Value;
+            }
+      } catch (Exception ex) { Logger.Verbose("[IsVictusModel] " + ex.Message); }
+      _isVictusModel = false;
+      return false;
+    }
+
+    /// <summary>纯逻辑自检：双重写入的 0x29 载荷编码（字段序/哨兵位）。不碰 WMI/MSR。</summary>
+    public static string SelfCheck() {
+      var fails = new List<string>();
+      // 0x29 载荷字段序 = [PL2, PL1, PL4, TPP] —— 写反了在 PL1=PL2 的常见设置下不会暴露
+      var both = EncodeDualWmiPayload(45, 80);
+      if (both[0] != 80 || both[1] != 45 || both[2] != 0xFF || both[3] != 0xFF)
+        fails.Add($"payload(45,80)=[{both[0]},{both[1]},{both[2]},{both[3]}] != [80,45,FF,FF]");
+      var p1Only = EncodeDualWmiPayload(45, null);
+      if (p1Only[0] != 0xFF || p1Only[1] != 45 || p1Only[2] != 0xFF || p1Only[3] != 0xFF)
+        fails.Add("PL1Only payload must keep PL2/PL4/TPP sentinels");
+      var p2Only = EncodeDualWmiPayload(null, 80);
+      if (p2Only[0] != 80 || p2Only[1] != 0xFF || p2Only[2] != 0xFF || p2Only[3] != 0xFF)
+        fails.Add("PL2Only payload must keep PL1/PL4/TPP sentinels");
+
+      // CPU 电压偏移 0x37 载荷:头部 00 03、符号位、幅度大端。写反符号 = 降压变加压。
+      var uv0 = EncodeCpuVoltageOffset(0);
+      if (uv0 == null || uv0.Length != 128 || uv0[0] != 0x00 || uv0[1] != 0x03 || uv0[2] != 1 || uv0[3] != 0 || uv0[4] != 0)
+        fails.Add("cpuVoltage(0) must be 128B [00 03 01 00 00]");
+      var uv130 = EncodeCpuVoltageOffset(-130);
+      if (uv130 == null || uv130[2] != 0 || uv130[3] != 0x00 || uv130[4] != 0x82)
+        fails.Add("cpuVoltage(-130) must be sign=0 mag=0x0082");
+      var uv200 = EncodeCpuVoltageOffset(-200);
+      if (uv200 == null || uv200[3] != 0x00 || uv200[4] != 0xC8)
+        fails.Add("cpuVoltage(-200) must encode 0x00C8");
+      // 加压/越界必须拒绝(本通道只允许降压与归零)
+      if (EncodeCpuVoltageOffset(10) != null) fails.Add("cpuVoltage(+10) must be rejected (undervolt only)");
+      if (EncodeCpuVoltageOffset(-201) != null) fails.Add("cpuVoltage(-201) must be rejected (>200mV)");
+      // 0x36 响应解码:符号位与头部校验
+      if (DecodeCpuVoltageOffset(new byte[] { 0, 3, 0, 0, 130, 0, 0, 0, 0 }) != -130)
+        fails.Add("cpuVoltage decode: sign=0 must yield -130mV");
+      if (DecodeCpuVoltageOffset(new byte[] { 0, 3, 1, 0, 0, 0, 0, 0, 0 }) != 0)
+        fails.Add("cpuVoltage decode: sign=1 mag=0 must yield 0mV");
+      if (DecodeCpuVoltageOffset(new byte[] { 0, 1, 0, 0, 130, 0, 0, 0, 0 }) != null)
+        fails.Add("cpuVoltage decode: wrong target id must be rejected");
+      if (DecodeCpuVoltageOffset(new byte[8]) != null)
+        fails.Add("cpuVoltage decode: short response must be rejected");
+      // WMI 健康门退避曲线:1s,2s,4s,8s,16s,30s,30s…(30s 封顶)
+      var expectMs = new[] { 1000, 2000, 4000, 8000, 16000, 30000, 30000 };
+      for (int i = 1; i <= 7; i++)
+        if ((int)WmiBackoffDelay(i).TotalMilliseconds != expectMs[i - 1])
+          fails.Add($"WmiBackoffDelay({i})={(int)WmiBackoffDelay(i).TotalMilliseconds}ms != {expectMs[i - 1]}ms");
+      return fails.Count == 0 ? "OK" : "FAIL OmenHardware: " + string.Join(" | ", fails);
+    }
+
     public static int Validation(string displayName) {
       try {
         if (IsGamingProduct(displayName)) return 2;
@@ -980,6 +1359,10 @@ namespace OmenSuperHub {
     // ponytail: mirrors OSH InitMaxTemp — reads BIOS-set temperature throttling
     // limit from HP SDK PlatformSettings instead of hardware MSR TjMax.
     public static int GetCpuTempLimit() {
+      // ponytail: SDK 路径天花板 — PerformanceControl.dll 按 4.1.1.0 强名请求 System.Threading.Tasks.Extensions，
+      // 字节加载程序集不吃 app.config 重定向；而按 Costura 约定嵌入该程序集会让解析器在启动时
+      // 递归栈溢出(c00000fd,已实测两种嵌入方式复现)。故 SDK 读取在真机必然失败 → 稳定走回退值 100。
+      // 对 Raptor Lake HX(本机)TjMax 恰为 100,显示正确;换机型若不准,先解决上述程序集链。
       try {
         string sku = PerformanceControlHelper.GetPlatformSku(isInit: true);
         string devType = DeviceModel.OmenPlatform.Name.ToString();
@@ -987,10 +1370,11 @@ namespace OmenSuperHub {
         var ps = PerformanceControlHelper.GetPlatformSettings(devType, sku);
         Logger.Info($"[GetCpuTempLimit] platformSettings={(ps == null ? "null" : "not null")}" +
             (ps != null ? $", tempThrottle={ps.temperatureThrottlingPerformance}" : ""));
-        if (ps != null && ps.temperatureThrottlingPerformance > 0)
+        // ponytail: 合理范围外(垃圾/未初始化值)按未读到处理,回退默认 100
+        if (ps != null && ps.temperatureThrottlingPerformance > 0 && ps.temperatureThrottlingPerformance < 200)
           return ps.temperatureThrottlingPerformance;
       } catch (Exception ex) {
-        Logger.Error($"[GetCpuTempLimit] EXCEPTION: {ex}");
+        Logger.Verbose($"[GetCpuTempLimit] SDK read unavailable (known): {ex.Message}");
       }
       return 100;
     }
@@ -1017,14 +1401,7 @@ namespace OmenSuperHub {
     public static void SetBalanceMode() {
       SendOmenBiosWmi(0x1A, new byte[] { 0xFF, 0x32 }, 0);
     }
-
-    public static bool IsPowerControlForDeviceSupported(DeviceEnums.DeviceType deviceType) {
-      switch (deviceType) {
-        case DeviceEnums.DeviceType.Gamora10:
-          return IsSupported() && deviceType != DeviceEnums.DeviceType.Gamora10;
-        default:
-          return IsSwFanControlSupport();
-      }
-    }
+    // (IsPowerControlForDeviceSupported 已删除: 零调用方死代码,且 case Gamora10 内
+    //  `deviceType != Gamora10` 恒 false —— IsSupported() 求值纯属浪费的死逻辑。)
   }
 }

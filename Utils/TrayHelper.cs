@@ -112,7 +112,7 @@ namespace OmenSuperHub.Utils {
         // — without this, SizeToContent="Height" popups may still report a stale
         // (under-sized) height at ContentRendered/Idle and open too low.
         w.UpdateLayout();
-        double popupW_wpf = w.ActualWidth > 0 ? w.ActualWidth : 280;
+        double popupW_wpf = w.ActualWidth > 0 ? w.ActualWidth : 328;
         double popupH_wpf = w.ActualHeight > 0 ? w.ActualHeight : 160;
         var mouse = Control.MousePosition;
         var screen = Screen.FromPoint(mouse).WorkingArea;
@@ -163,8 +163,12 @@ namespace OmenSuperHub.Utils {
           w.Top = Math.Max(wa.Top, mouse.Y - (int)w.ActualHeight - 8);
         } catch {
           var wa = SystemParameters.WorkArea;
-          w.Left = wa.Right - 290;
-          w.Top = wa.Bottom - 200;
+          // ponytail: 窗口外包了 24px 阴影留白(280→328),固定偏移已失准;按实测尺寸贴右下留 8px。
+          // Actual 为 0(SizeToContent 首帧未测量)时退回 MoveToCursor 同款兜底尺寸。
+          double ww = w.ActualWidth > 0 ? w.ActualWidth : 328;
+          double wh = w.ActualHeight > 0 ? w.ActualHeight : 160;
+          w.Left = wa.Right - ww - 8;
+          w.Top = wa.Bottom - wh - 8;
         }
       }
     }
@@ -214,6 +218,28 @@ namespace OmenSuperHub.Utils {
       langMenu.Items.Add(CreateLangMenuItem("繁體中文", AppLanguage.TraditionalChinese));
       langMenu.Items.Add(CreateLangMenuItem("English", AppLanguage.English));
       _contextMenu.Items.Add(langMenu);
+      // ponytail: 性能预设快捷选择 —— 结构镜像上方语言子菜单:父级 + 互斥勾选。
+      // 内置三档 + 自定义(同 FanPage 预设下拉),勾选态以 ConfigService.Preset 为准;
+      // 切换后 SwitchPreset 写配置、ApplyPresetHardware 下发硬件,重建菜单刷新勾选。
+      var presetMenu = new System.Windows.Controls.MenuItem {
+        Header = Strings.SysPresetsHeading,
+        Icon = new SymbolIcon { Symbol = SymbolRegular.Gauge24 }
+      };
+      foreach (var (display, key) in PresetManager.EnumerateAllPresets()) {
+        string k = key;   // 闭包捕获,避免 foreach 变量共享
+        var pItem = new System.Windows.Controls.MenuItem {
+          Header = display, IsCheckable = true, IsChecked = ConfigService.Preset == k
+        };
+        pItem.Click += (s, e) => {
+          _contextMenu.IsOpen = false;
+          PresetManager.SwitchPreset(k);
+          if (System.Windows.Application.Current?.MainWindow is Views.MainWindow mw)
+            mw.ApplyPresetHardware();
+          BuildContextMenu();
+        };
+        presetMenu.Items.Add(pItem);
+      }
+      _contextMenu.Items.Add(presetMenu);
       AddMenuItem(Strings.Help, () => Views.HelpWindow.ShowInstance(), SymbolRegular.QuestionCircle24);
       _contextMenu.Items.Add(new System.Windows.Controls.Separator());
       AddMenuItem(Strings.Exit, () => TrayService.Exit(), SymbolRegular.SignOut24);
@@ -250,7 +276,7 @@ namespace OmenSuperHub.Utils {
         ConfigService.Language = lang.ToString();
         ConfigService.Save("Language");
         BuildContextMenu();
-        Views.MainWindow.ApplyLanguageToInstance();
+        // ponytail: 主窗口不实时切换 — 页面文本在重开主面板(ReleaseFrontend 清页面缓存)后生效
       };
       return item;
     }
