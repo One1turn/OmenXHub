@@ -9,33 +9,55 @@
   <!-- Corner Radius -->
   <CornerRadius x:Key="ControlCornerRadius">4</CornerRadius>
   <CornerRadius x:Key="CardCornerRadius">4</CornerRadius>
+  <!-- ponytail: PopupCornerRadius / OverlayCornerRadius 本项目不引用,但 Wpf.Ui 的 ContentDialog 模板
+       用 PopupCornerRadius 设弹窗圆角(默认也是 8,这里显式声明保持一致);删了会静默退回库默认值。 -->
   <CornerRadius x:Key="PopupCornerRadius">8</CornerRadius>
   <CornerRadius x:Key="OverlayCornerRadius">6</CornerRadius>
-  <CornerRadius x:Key="ToggleCornerRadius">12</CornerRadius>
-  <CornerRadius x:Key="BadgeCornerRadius">4</CornerRadius>
 
-  <!-- Typography Scale — 6 档收敛(原 13 种散落字号);20+ 为 Dashboard 大数字一次性展示尺寸,不入体系 -->
+  <!-- Typography Scale — 7 档收敛(原 13 种散落字号);Dashboard 大数字(20/22/28)仍是一次性展示尺寸,不入体系 -->
   <sys:Double x:Key="FontSizeCaption">11</sys:Double>     <!-- 辅助/状态小字 -->
   <sys:Double x:Key="FontSizeBody">12</sys:Double>        <!-- 正文/标签(默认) -->
   <sys:Double x:Key="FontSizeSubtitle">13</sys:Double>    <!-- 次级强调 -->
   <sys:Double x:Key="FontSizeTitle">14</sys:Double>       <!-- 卡片标题 -->
   <sys:Double x:Key="FontSizeSubheader">16</sys:Double>   <!-- 区块标题 -->
-  <sys:Double x:Key="FontSizeHeader">18</sys:Double>      <!-- 页面标题/图标 -->
+  <sys:Double x:Key="FontSizeHeader">18</sys:Double>      <!-- 卡片图标 -->
+  <!-- ponytail: 页面标题原先 11 页各写 FontSize="22" FontWeight="Bold" —— 22 不在梯子上,
+       Bold(700) 在雅黑下笔画粘连。24 Medium 与 LLT/Fluent 的页面标题一致。
+       校准:Microsoft YaHei UI 只有 Light(290)/Regular(400)/Bold(700) 三个 face,Medium(500)
+       会被 WPF 吸附到 Regular —— 所以中文标题实际是 24 Regular,这正是 LLT 中文界面同样的
+       渲染结果,不是 bug。哪天换了带 Medium 的可变字体,这里自动生效。
+       天花板:若要支持大字号/缩放模式,这个常量得改成按 DPI 计算。 -->
+  <sys:Double x:Key="FontSizePageTitle">24</sys:Double>   <!-- 页面标题(配 FontWeight=Medium) -->
 
   <!-- 中性分隔线 — 明暗主题通吃的半透明灰(原 #33888888 硬编码入 token) -->
   <SolidColorBrush x:Key="DividerBrush" Color="#33888888"/>
 
+  <!-- CoreKeep 核心格文字色 — 格底为深色系(红/蓝/灰),两主题下都用白字保对比,故主题无关 -->
+  <SolidColorBrush x:Key="CoreTypeCellForegroundBrush" Color="#FFFFFFFF"/>
+
+  <!-- 品牌渐变 — 单一来源(与 PaneHeader logo / TrayService.cs 同源;主题无关,故放 Variables)
+       Ceiling: 方向(StartPoint/EndPoint)由各消费点自带,此处只收敛色标 -->
+  <LinearGradientBrush x:Key="OmenBrandGradient" StartPoint="0,0" EndPoint="1,0">
+    <GradientStop Color="#FF55E1" Offset="0.0"/>
+    <GradientStop Color="#FF0402" Offset="0.5"/>
+    <GradientStop Color="#FFB402" Offset="1.0"/>
+  </LinearGradientBrush>
+
   <!-- Spacing / Sizing -->
   <!-- ponytail: 下拉统一最小宽度(灯光页已验证 180);窄卡片列如需例外用字面量并注释 -->
   <sys:Double x:Key="ComboMinWidth">180</sys:Double>
-  <Thickness x:Key="CardPadding">16,14</Thickness>
-  <Thickness x:Key="ButtonPadding">16,8</Thickness>
-  <Thickness x:Key="SmallButtonPadding">8,4</Thickness>
-  <Thickness x:Key="TextPadding">8,4</Thickness>
   <Thickness x:Key="PageMargin">24,20</Thickness>
-  <Thickness x:Key="NavItemPadding">14,10</Thickness>
   <Thickness x:Key="CardMargin">0,0,0,8</Thickness>
-  <Thickness x:Key="CardContentMargin">0,0,0,12</Thickness>
+  <!-- PerfPage 双列卡网格与卡内行距 — 原页内同值 Margin 重复 6~12 次,收敛后改一处即全页一致;
+       低频值(<6 次)仍留字面量,不为一次性间距造 token -->
+  <Thickness x:Key="CardGridGapRight">0,0,4,8</Thickness>  <!-- 网格左列: 右留 4 给中缝, 下留 8 给行距 -->
+  <Thickness x:Key="CardGridGapLeft">4,0,0,8</Thickness>   <!-- 网格右列: 左留 4 给中缝, 下留 8 给行距 -->
+  <Thickness x:Key="FieldStackGap">0,4,0,0</Thickness>     <!-- 控件下方说明/状态小字的上间距 -->
+  <Thickness x:Key="RowGapBottom">0,0,0,8</Thickness>      <!-- 卡内行块之间的下间距 -->
+  <Thickness x:Key="RowGapBottomSmall">0,0,0,4</Thickness> <!-- 标签与控件之间的紧凑下间距 -->
+  <Thickness x:Key="RowGapTop">0,8,0,0</Thickness>         <!-- 卡内行块之间的上间距(按钮行同用) -->
+  <Thickness x:Key="FieldGroupGap">0,0,0,10</Thickness>    <!-- 电源计划各组字段之间的下间距 -->
+  <Thickness x:Key="InlineGapRight">0,0,8,0</Thickness>    <!-- 同行控件之间的右间距 -->
   <!-- 卡片头部规范 (PerfPage 与后续卡片页共用): 右侧 Accessory 统一 12 右距+垂直居中 -->
   <Thickness x:Key="CardAccessoryMargin">0,0,12,0</Thickness>
   <Thickness x:Key="CardHeaderIconMargin">0,0,6,0</Thickness>
@@ -46,26 +68,12 @@
   <GridLength x:Key="ValueRowNumberWidth">150</GridLength>
   <Thickness x:Key="ValueSliderMargin">12,0,0,0</Thickness>
 
-  <!-- Border Thickness -->
-  <Thickness x:Key="DefaultBorderThickness">1</Thickness>
-  <Thickness x:Key="ThinBorderThickness">0.5</Thickness>
-  <Thickness x:Key="NoBorderThickness">0</Thickness>
-
-  <!-- Min Heights -->
-  <sys:Double x:Key="TextControlMinHeight">24</sys:Double>
-  <sys:Double x:Key="ButtonMinHeight">32</sys:Double>
-  <sys:Double x:Key="SliderMinHeight">24</sys:Double>
-
-  <!-- Animation Durations (ms) -->
-  <sys:Double x:Key="ControlFastAnimationDuration">167</sys:Double>
-  <sys:Double x:Key="ControlNormalAnimationDuration">250</sys:Double>
-  <sys:Double x:Key="ControlSlowAnimationDuration">350</sys:Double>
+  <!-- 大数字统计值(CoreKeep 四格 / NetworkBoost 三格)—— 同角色同尺寸,收敛成一个 token;
+       Dashboard 两个环内数字(22/20)按环半径单独定,不是同一角色,仍留字面量。 -->
+  <sys:Double x:Key="FontSizeStatValue">24</sys:Double>
 
   <!-- Easing Functions -->
   <QuadraticEase x:Key="DefaultEase" EasingMode="EaseInOut"/>
-
-  <!-- Font Sizes — 旧散落字号已收敛到上方 FontSize* 6 档,仅保留独立的大数字尺寸 -->
-  <sys:Double x:Key="StatValueFontSize">28</sys:Double>
 
   <!-- Font Families -->
   <FontFamily x:Key="DefaultFontFamily">Microsoft YaHei UI, Segoe UI</FontFamily>

@@ -6,10 +6,24 @@
       Title="{x:Static app:Strings.PageLighting}"
       SizeChanged="LightingPage_SizeChanged">
 
-  <ScrollViewer VerticalScrollBarVisibility="Auto">
-    <StackPanel Margin="24,20" TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
+  <Page.Resources>
+    <!-- ponytail: 颜色下拉选项模板 — 16×16 圆角色块 + 本地化名。Content 由 code-behind
+         ApplyColorSwatches 升级为 LightingColorItem(色块+名);Custom 项保持纯文字。
+         因显式 ComboBoxItem 子项不接收 ComboBox.ItemTemplate/ItemContainerStyle,故按项赋 ContentTemplate。 -->
+    <DataTemplate x:Key="ColorSwatchTemplate">
+      <StackPanel Orientation="Horizontal">
+        <Border Width="16" Height="16" CornerRadius="3" BorderThickness="1"
+                BorderBrush="{DynamicResource BorderDefaultBrush}"
+                Background="{Binding Swatch}"/>
+        <TextBlock Text="{Binding Name}" Margin="8,0,0,0" VerticalAlignment="Center"/>
+      </StackPanel>
+    </DataTemplate>
+  </Page.Resources>
+
+  <ScrollViewer Style="{DynamicResource OmenScrollViewer}" VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="{DynamicResource PageMargin}" TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
       <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
-        <TextBlock x:Name="HeadingLighting" Text="{x:Static app:Strings.LightingControl}" FontSize="22" FontWeight="Bold" VerticalAlignment="Center"/>
+        <TextBlock x:Name="HeadingLighting" Text="{x:Static app:Strings.LightingControl}" FontSize="{DynamicResource FontSizePageTitle}" FontWeight="Medium" VerticalAlignment="Center"/>
         <ui:ToggleSwitch x:Name="LightEnableToggle" IsChecked="False" Margin="16,0,0,0" VerticalAlignment="Center"
                          Checked="LightEnable_Changed" Unchecked="LightEnable_Changed"/>
       </StackPanel>
@@ -18,7 +32,7 @@
       <ui:CardControl x:Name="UnsupportedCard" Visibility="Collapsed" Margin="{StaticResource CardMargin}">
         <ui:CardControl.Header>
           <StackPanel>
-            <ui:SymbolIcon Symbol="Prohibited24" FontSize="20" Margin="0,0,0,8"/>
+            <ui:SymbolIcon Symbol="Prohibited24" FontSize="{DynamicResource FontSizeHeader}" Margin="0,0,0,8"/>
             <TextBlock Text="{x:Static app:Strings.LightingUnsupportedHint}" TextWrapping="Wrap"
                        Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
           </StackPanel>
@@ -26,7 +40,7 @@
       </ui:CardControl>
 
       <!-- ponytail: 场景选择器 — 参考 OmenCore 场景系统。ComboBox 切换场景 + 新建/保存/删除 -->
-      <Border x:Name="SceneCard" Padding="10,8" Margin="0,0,0,14" Background="{DynamicResource CardBackgroundBrush}" CornerRadius="6"
+      <Border x:Name="SceneCard" Padding="10,8" Margin="0,0,0,14" Background="{DynamicResource CardBackgroundFillColorDefaultBrush}" CornerRadius="6"
               Visibility="{Binding ElementName=LightEnableToggle, Path=IsChecked, Converter={StaticResource BoolToVisibility}}">
         <StackPanel>
           <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
@@ -89,8 +103,10 @@
                                                Storyboard.TargetProperty="(ColumnDefinition.Width)">
                   <DiscreteObjectKeyFrame KeyTime="0" Value="{x:Static GridLength.Auto}"/>
                 </ObjectAnimationUsingKeyFrames>
-                <!-- ponytail: Narrow 下把右侧 2 张卡换到 Column 0,Row 2/4(避开 0/2 的左侧卡)。
-                     Grid.Row/Grid.Column 是 attached property,DiscreteObjectKeyFrame 用 Int32 即可。 -->
+                <!-- ponytail: Narrow 下四卡纵向落位 Device(0)→Protocol(2)→Bright(4)→Zone(6),
+                     与 Wide 阅读顺序一致。LightCard1 移到 Row2 的同时必须把 LightCard2 挪到
+                     Row4,否则两卡同格重叠(后声明者盖住前者)。
+                     Grid.Row/Grid.Column 是 attached property,用 Int32 关键帧动画。 -->
                 <Int32AnimationUsingKeyFrames Storyboard.TargetName="LightCard1"
                                               Storyboard.TargetProperty="(Grid.Row)">
                   <DiscreteInt32KeyFrame KeyTime="0" Value="2"/>
@@ -98,6 +114,10 @@
                 <Int32AnimationUsingKeyFrames Storyboard.TargetName="LightCard1"
                                               Storyboard.TargetProperty="(Grid.Column)">
                   <DiscreteInt32KeyFrame KeyTime="0" Value="0"/>
+                </Int32AnimationUsingKeyFrames>
+                <Int32AnimationUsingKeyFrames Storyboard.TargetName="LightCard2"
+                                              Storyboard.TargetProperty="(Grid.Row)">
+                  <DiscreteInt32KeyFrame KeyTime="0" Value="4"/>
                 </Int32AnimationUsingKeyFrames>
                 <Int32AnimationUsingKeyFrames Storyboard.TargetName="LightCard3"
                                               Storyboard.TargetProperty="(Grid.Row)">
@@ -117,7 +137,7 @@
             <StackPanel>
               <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                 <ui:SymbolIcon Symbol="DeviceEq24" FontSize="{DynamicResource FontSizeHeader}" Margin="0,0,10,0"/>
-                <TextBlock x:Name="LightDeviceText" Text="{x:Static app:Strings.LightingDeviceHeading}" Tag="Device" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" VerticalAlignment="Center"/>
+ <TextBlock x:Name="LightDeviceText" Text="{x:Static app:Strings.LightingDeviceHeading}" Tag="Device" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
               </StackPanel>
               <ComboBox x:Name="LightDevCombo" MinWidth="{StaticResource ComboMinWidth}"
                         SelectionChanged="LightDev_SelectionChanged">
@@ -133,7 +153,7 @@
             <StackPanel>
               <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                 <ui:SymbolIcon Symbol="Settings24" FontSize="{DynamicResource FontSizeHeader}" Margin="0,0,10,0"/>
-                <TextBlock x:Name="LightProtocolText" Text="{x:Static app:Strings.LightingProtocolHeading}" Tag="Protocol" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" VerticalAlignment="Center"/>
+ <TextBlock x:Name="LightProtocolText" Text="{x:Static app:Strings.LightingProtocolHeading}" Tag="Protocol" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
               </StackPanel>
               <ComboBox x:Name="LightProtoCombo" MinWidth="{StaticResource ComboMinWidth}"
                         SelectionChanged="LightProto_SelectionChanged">
@@ -158,7 +178,7 @@
             <StackPanel>
               <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                 <ui:SymbolIcon Symbol="Lightbulb24" FontSize="{DynamicResource FontSizeHeader}" Margin="0,0,10,0"/>
-                <TextBlock Text="{x:Static app:Strings.LightingBrightSpeed}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <TextBlock Text="{x:Static app:Strings.LightingBrightSpeed}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="{DynamicResource FontSizeTitle}"/>
               </StackPanel>
               <TextBlock Text="{x:Static app:Strings.LightingBrightness}" FontSize="{DynamicResource FontSizeBody}" Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,4"/>
               <Grid>
@@ -193,8 +213,8 @@
         </ui:CardControl>
 
         <ui:CardControl x:Name="LightCard3" Grid.Row="2" Grid.Column="2" Margin="0,0,0,8">
-          <!-- ponytail: Zone 子 Grid 的 VSM 挂在 LightCard3(Control) 上,因为 GoToState 只接受 Control。
-               Storyboard TargetName 按名字查可跨层级引用 ZoneColGap/Zone2Cell/Zone4Cell。 -->
+          <!-- ponytail: Zone 子 Grid 的 VSM 组挂在 LightCard3 上,.cs 用 GoToElementState 切换
+               (GoToState 只查 ControlTemplate 根,组挂元素自身时永远切不动——离屏探针实证)。 -->
           <VisualStateManager.VisualStateGroups>
             <VisualStateGroup x:Name="ZoneLayoutStates">
               <VisualState x:Name="Zone2Col"/>
@@ -204,11 +224,24 @@
                                                  Storyboard.TargetProperty="(ColumnDefinition.Width)">
                     <DiscreteObjectKeyFrame KeyTime="0" Value="{x:Static GridLength.Auto}"/>
                   </ObjectAnimationUsingKeyFrames>
+                  <!-- ponytail: 第 3 列也须压到 Auto —— 两个 * 列会平分宽度,单列时四区被挤半宽 -->
+                  <ObjectAnimationUsingKeyFrames Storyboard.TargetName="ZoneCol2"
+                                                 Storyboard.TargetProperty="(ColumnDefinition.Width)">
+                    <DiscreteObjectKeyFrame KeyTime="0" Value="{x:Static GridLength.Auto}"/>
+                  </ObjectAnimationUsingKeyFrames>
                   <Int32AnimationUsingKeyFrames Storyboard.TargetName="Zone2Cell"
                                                 Storyboard.TargetProperty="(Grid.Row)">
                     <DiscreteInt32KeyFrame KeyTime="0" Value="2"/>
                   </Int32AnimationUsingKeyFrames>
                   <Int32AnimationUsingKeyFrames Storyboard.TargetName="Zone2Cell"
+                                                Storyboard.TargetProperty="(Grid.Column)">
+                    <DiscreteInt32KeyFrame KeyTime="0" Value="0"/>
+                  </Int32AnimationUsingKeyFrames>
+                  <Int32AnimationUsingKeyFrames Storyboard.TargetName="Zone3Cell"
+                                                Storyboard.TargetProperty="(Grid.Row)">
+                    <DiscreteInt32KeyFrame KeyTime="0" Value="4"/>
+                  </Int32AnimationUsingKeyFrames>
+                  <Int32AnimationUsingKeyFrames Storyboard.TargetName="Zone3Cell"
                                                 Storyboard.TargetProperty="(Grid.Column)">
                     <DiscreteInt32KeyFrame KeyTime="0" Value="0"/>
                   </Int32AnimationUsingKeyFrames>
@@ -228,7 +261,7 @@
             <StackPanel>
               <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                 <ui:SymbolIcon Symbol="Color24" FontSize="{DynamicResource FontSizeHeader}" Margin="0,0,10,0"/>
-                <TextBlock Text="{x:Static app:Strings.LightingZoneColorHeading}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <TextBlock Text="{x:Static app:Strings.LightingZoneColorHeading}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="{DynamicResource FontSizeTitle}"/>
               </StackPanel>
               <!-- ponytail: 4-zone color preview bar — visual feedback for which zone has which color.
                    Replaces the text-only Zone 1-4 labels that gave no positional context.
@@ -252,9 +285,15 @@
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="*"/>
                   <ColumnDefinition Width="8" x:Name="ZoneColGap"/>
-                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="*" x:Name="ZoneCol2"/>
                 </Grid.ColumnDefinitions>
+                <!-- ponytail: 7 行与页面级 LightGrid 同构(内容行 0/2/4/6 + 8px 间隔行)。
+                     Zone2Col 态只用 0/2,多出的 Auto 行高度为 0;Zone1Col 单列时四区落 0/2/4/6。 -->
                 <Grid.RowDefinitions>
+                  <RowDefinition Height="Auto"/>
+                  <RowDefinition Height="8"/>
+                  <RowDefinition Height="Auto"/>
+                  <RowDefinition Height="8"/>
                   <RowDefinition Height="Auto"/>
                   <RowDefinition Height="8"/>
                   <RowDefinition Height="Auto"/>
@@ -350,7 +389,7 @@
           <StackPanel>
             <StackPanel Orientation="Horizontal">
               <ui:SymbolIcon Symbol="Replay24" FontSize="{DynamicResource FontSizeHeader}" Margin="0,0,10,0"/>
-              <TextBlock x:Name="LightAnimText" Text="{x:Static app:Strings.LightingAnimation}" Tag="LightingAnimation" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" VerticalAlignment="Center"/>
+ <TextBlock x:Name="LightAnimText" Text="{x:Static app:Strings.LightingAnimation}" Tag="LightingAnimation" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
             </StackPanel>
             <ComboBox x:Name="AnimCombo" MinWidth="{StaticResource ComboMinWidth}" Margin="0,8,0,0"
                       SelectionChanged="Anim_SelectionChanged">
@@ -431,8 +470,8 @@
           <StackPanel>
             <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
               <ui:SymbolIcon Symbol="Color24" FontSize="{DynamicResource FontSizeHeader}" Margin="0,0,10,0"/>
-              <TextBlock x:Name="PerKeyTitleText" Text="{x:Static app:Strings.LightingPerKeyTitle}" Tag="PerKeyRgb"
-                         FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}"
+ <TextBlock x:Name="PerKeyTitleText" Text="{x:Static app:Strings.LightingPerKeyTitle}" Tag="PerKeyRgb"
+ FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold"
                          VerticalAlignment="Center"/>
             </StackPanel>
             <TextBlock Text="{x:Static app:Strings.LightingPerKeyStaticColor}" FontSize="{DynamicResource FontSizeBody}"
@@ -461,7 +500,7 @@
               <TextBlock x:Name="PerKeyPickerHint" Text="{x:Static app:Strings.LightingPerKeyApplyHint}" FontSize="{DynamicResource FontSizeCaption}"
                          Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,0,0,8" TextWrapping="Wrap"/>
               <!-- 键盘布局:每行一个水平 StackPanel(代码生成),整体外框给暗底村托 -->
-              <Border Background="{DynamicResource CardBackgroundBrush}" CornerRadius="6"
+              <Border Background="{DynamicResource CardBackgroundFillColorSecondaryBrush}" CornerRadius="6"
                       Padding="10,8" Margin="0,0,0,10">
                 <ItemsControl x:Name="PerKeyLayout"/>
               </Border>
@@ -549,8 +588,8 @@
             <!-- 标题留在卡壳上:面板搬入 PerKeyCard 时不带走,由主标题"单键 RGB + 灯带"统一覆盖 -->
             <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
               <ui:SymbolIcon Symbol="Lightbulb24" FontSize="{DynamicResource FontSizeHeader}" Margin="0,0,10,0"/>
-              <TextBlock Text="{x:Static app:Strings.LightingLightBarTitle}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold"
-                         Foreground="{DynamicResource AccentOmenBrush}" VerticalAlignment="Center"/>
+ <TextBlock Text="{x:Static app:Strings.LightingLightBarTitle}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold"
+ VerticalAlignment="Center"/>
             </StackPanel>
             <StackPanel x:Name="LightBarPanel">
             <!-- 条形预览 — 4 段横向排布,模拟灯条空间位置 -->

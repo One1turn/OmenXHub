@@ -14,6 +14,108 @@
     <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}"/>
   </Style>
 
+  <!-- ponytail: 二级弹窗里的列表行卡片 — 与 ui:CardControl 同一套观感(底色+发丝线+圆角 token),
+       只是没有 CardControl 固定的 Header/Content 两列布局,行内结构由使用处自排。
+       原先各处手搓 Border 只设了底色,亮色主题下没有描边、圆角还各写 6/8。 -->
+  <Style x:Key="OmenListCard" TargetType="Border">
+    <Setter Property="Background" Value="{DynamicResource CardBackgroundFillColorDefaultBrush}"/>
+    <Setter Property="BorderBrush" Value="{DynamicResource CardBorderBrush}"/>
+    <Setter Property="BorderThickness" Value="1"/>
+    <Setter Property="CornerRadius" Value="{DynamicResource CardCornerRadius}"/>
+    <Setter Property="Padding" Value="12,10"/>
+    <Setter Property="Margin" Value="0,0,0,6"/>
+  </Style>
+
+  <!-- ponytail: 二级弹窗的标题栏左对齐 —— Wpf.Ui 的 TitleBar 模板在 Header 左边放了一个
+       TitleGrid(装 Icon),它的 Margin 取 TemplateBinding Padding。只要 Icon 或 Title 有一个非空
+       它就保持 Visible,于是 Header 的起点被推成 Padding.Left + Padding.Right。
+       实测(StorageClean,窗口 480 宽,正文 Margin=16):
+         Padding=16,4,16,4 → Header.x=32   ← 默认值,比正文右缩 16
+         Padding=16,4,0,4  → Header.x=16   ← 与正文对齐
+         Padding=0,4,0,4   → Header.x=0    ← 比正文左伸 16
+       所以统一成 16,4,0,4:左边跟正文一致,右边留 0 由系统按钮自己贴边。
+       注意:Title 和 Icon 都为空的弹窗(HelpWindow)会让 TitleGrid 整体 Collapsed,
+       此时 Padding 完全失效、Header 落在 x=0 —— 那类窗口必须显式给 Title。 -->
+  <Style x:Key="OmenDialogTitleBar" BasedOn="{StaticResource {x:Type ui:TitleBar}}" TargetType="{x:Type ui:TitleBar}">
+    <Setter Property="Padding" Value="16,4,0,4"/>
+  </Style>
+
+  <!-- ponytail: 空态文案统一规格 —— 原先三处各写一套(12px Medium / 13px / 13px+MaxWidth),
+       口径也不一致。收敛成一个 keyed 样式:次级色、居中、限宽换行。 -->
+  <Style x:Key="OmenEmptyState" TargetType="TextBlock">
+    <Setter Property="FontSize" Value="{DynamicResource FontSizeSubtitle}"/>
+    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+    <Setter Property="TextAlignment" Value="Center"/>
+    <Setter Property="TextWrapping" Value="Wrap"/>
+    <Setter Property="HorizontalAlignment" Value="Center"/>
+    <Setter Property="VerticalAlignment" Value="Center"/>
+    <Setter Property="MaxWidth" Value="320"/>
+  </Style>
+
+  <!-- ponytail: 二级弹窗的标签页。Wpf.Ui 3.1.1 的 TabItem 模板里写死 MinWidth=180 且选中态是
+       一整块灰底圆角 —— 三四个页签各占 180px,读起来像表头;而且和本项目导航栏的下划线
+       是两套语言。这里换成下划线式,指示条用 SystemAccentColorSecondaryBrush
+       (与 NavigationView 的 ActiveBar 同一个刷子,ThemeService 从系统强调色注入)。
+       页签按内容宽度排列,底部一条发丝线接内容区。全项目只有 HelpWindow / SystemOptimizeWindow 用。 -->
+  <Style TargetType="TabControl">
+    <Setter Property="Background" Value="Transparent"/>
+    <Setter Property="BorderThickness" Value="0"/>
+    <Setter Property="Padding" Value="0"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TabControl">
+          <Grid KeyboardNavigation.TabNavigation="Local">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <Border Grid.Row="0" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,0,0,1">
+              <StackPanel Orientation="Horizontal" IsItemsHost="True" Background="Transparent"/>
+            </Border>
+            <ContentPresenter Grid.Row="1" x:Name="PART_SelectedContentHost"
+                              ContentSource="SelectedContent" Margin="0,12,0,0"/>
+          </Grid>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
+  <Style TargetType="TabItem">
+    <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}"/>
+    <Setter Property="FontSize" Value="{DynamicResource FontSizeTitle}"/>
+    <Setter Property="FontWeight" Value="SemiBold"/>
+    <Setter Property="Margin" Value="0,0,24,0"/>
+    <Setter Property="Cursor" Value="Hand"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="TabItem">
+          <Grid Background="Transparent">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="*"/>
+              <RowDefinition Height="2"/>
+            </Grid.RowDefinitions>
+            <ContentPresenter Grid.Row="0" ContentSource="Header" Margin="2,10,2,10"
+                              HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            <Border x:Name="Indicator" Grid.Row="1" CornerRadius="1"
+                    Background="{DynamicResource SystemAccentColorSecondaryBrush}" Opacity="0"/>
+          </Grid>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsMouseOver" Value="True">
+              <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+            </Trigger>
+            <Trigger Property="IsSelected" Value="True">
+              <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+              <Setter TargetName="Indicator" Property="Opacity" Value="1"/>
+            </Trigger>
+            <Trigger Property="IsEnabled" Value="False">
+              <Setter Property="Foreground" Value="{DynamicResource TextMutedBrush}"/>
+            </Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+
   <!-- ponytail: 性能卡值行 (NumberBox+Slider) 共用样式, BasedOn 默认保外观, 只统一布局属性。
        各自差异 (min/max/step/事件/绑定) 留在使用处。 -->
   <Style x:Key="PerfNumberBoxStyle" BasedOn="{StaticResource {x:Type ui:NumberBox}}" TargetType="ui:NumberBox">

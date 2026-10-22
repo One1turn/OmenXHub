@@ -52,9 +52,12 @@ namespace OmenSuperHub {
           + "\n" + OmenSuperHub.Services.LightingSceneService.SelfCheck()
           + "\n" + OmenSuperHub.Pages.LightingPage.LightBarAnimsSelfCheck()
           + "\n" + OmenSuperHub.Pages.LightingPage.LayoutStateSelfCheck()
+          + "\n" + OmenSuperHub.Pages.PerfPage.GuardSelfCheck()
+          + "\n" + OmenSuperHub.Views.MainWindow.WindowPlacementSelfCheck()
           + "\n" + OmenSuperHub.Services.LightingAnimationService.SelfCheck()
           + "\n" + OmenSuperHub.Services.DiskCleaner.SelfCheck()
           + "\n" + OmenSuperHub.Services.HardwareService.SelfCheck()
+          + "\n" + OmenSuperHub.Services.HardwareApiService.SelfCheck()
           + "\n" + IntelTuneSelfCheck()
           + "\n" + OmenSuperHub.Services.AutomationProcessor.SelfCheck()
           + "\n" + OmenSuperHub.Services.MacroController.SelfCheck()
@@ -62,17 +65,44 @@ namespace OmenSuperHub {
           + "\n" + OmenSuperHub.Services.RaplPowerLimitService.SelfCheck()
           + "\n" + OmenSuperHub.OmenHardware.SelfCheck()
           + "\n" + OmenSuperHub.Services.NetworkBoost.BoostService.SelfCheck()
+          + "\n" + OmenSuperHub.Services.NetworkBoost.SystemProxyManager.SelfCheck()
           + "\n" + OmenSuperHub.Services.NetworkBoost.RateLimiter.SelfCheck()
           + "\n" + OmenSuperHub.Services.FanService.SelfCheck()
           + "\n" + OmenSuperHub.Services.TrayService.SelfCheck()
           + "\n" + OmenSuperHub.Pages.NativeMethods_Display.SelfCheck()
           + "\n" + OmenSuperHub.Services.NetworkBoost.TunManager.SelfCheck()
           + "\n" + OmenSuperHub.Services.ThreadBindingService.SelfCheck()
-          + "\n" + OmenSuperHub.Pages.DashboardPage.GpuPrefSelfCheck();
+          + "\n" + OmenSuperHub.Pages.DashboardPage.GpuPrefSelfCheck()
+          + "\n" + OmenSuperHub.Pages.DashboardPage.StorageBarSelfCheck()
+          + "\n" + OmenSuperHub.Views.OsdWindow.OsdKindsSelfCheck()
+          + "\n" + OmenSuperHub.Pages.DashboardPage.PresetComboSyncSelfCheck()
+          + "\n" + OmenSuperHub.Pages.FanPage.ChartInterpolateSelfCheck()
+          + "\n" + OmenSuperHub.Services.TouchpadLockService.SelfCheck();
         // ponytail: 关面板释放前端内存的自检 —— 跑完静态自检后启动一次主窗 → 导航 Dashboard
         // (热缓存 +订阅 OnPresetCycled) → Hide 触发 IsVisibleChanged→ReleaseFrontend → 反射断言
         // 三条:页面缓存清空 / PerfPage.Instance 断开 / OnPresetCycled 订阅归零。任一不成立写 FAIL。
         result += "\n[FrontendRelease] " + RunFrontendReleaseSelfCheck();
+        // ponytail: 二级弹窗骨架自检 —— ExtendsContentIntoTitleBar 抹掉原生标题栏后,
+        // 每个弹窗必须自带 ui:TitleBar(拖拽区 + 系统关闭键)。原先 5 个窗口只有手搓标题 Border,
+        // 只能靠自绘 X 关闭且完全不能拖动。这里逐个实例化(不 Show,只套模板)断言。
+        result += "\n[DialogChrome] " + RunDialogChromeSelfCheck();
+        // ponytail: 页面标题排版断言 —— 11 页共用 FontSizePageTitle(24)/Medium。
+        // token 键名拼错时 DynamicResource 静默退回继承字号(12),构建不报错,只有这里能抓到。
+        result += "\n[PageTitleType] " + RunPageTitleTypeSelfCheck();
+        // ponytail: 卡头排版断言 —— 68 张卡的标题统一 14 SemiBold、图标统一 18。
+        // 原先同一层级混着 14/13/继承(12) 三种标题字号,跨页翻动标题会跳。
+        result += "\n[CardHeaderType] " + RunCardHeaderTypeSelfCheck();
+        // ponytail: 空态断言 —— 四处空列表提示共用 OmenEmptyState(次级色/13px/居中/限宽)。
+        result += "\n[EmptyState] " + RunEmptyStateSelfCheck();
+        // ponytail: 弹窗严重度断言 —— Info/Warn/Error 各自带同色左侧色条,不再只靠图标区分。
+        result += "\n[DialogSeverity] " + RunDialogSeveritySelfCheck();
+        // ponytail: 滚动条翻页热区断言 —— 两个透明 RepeatButton 必须挂在 Track 的
+        // Decrease/Increase 分区里。写成 Grid 兄弟节点会互相完全覆盖,命中永远落在最后一个
+        // (实测点轨道顶端也是 PageDown),而这个错误在视觉上完全看不出来。
+        result += "\n[ScrollBarPaging] " + RunScrollBarPagingSelfCheck();
+        // ponytail: 托盘重建断言 —— explorer 重启广播 TaskbarCreated 后必须重新 NIM_ADD,
+        // 否则图标永久消失(旧实现 _added 恒 true,只发 NIM_MODIFY)。
+        result += "\n[TrayRecreate] " + RunTrayRecreateSelfCheck();
         Console.WriteLine(result);
         try {
           // WinExe 无控制台时输出不可见，同时落盘方便验证
@@ -220,13 +250,23 @@ namespace OmenSuperHub {
 
         // Init hardware and timers in background — window already visible
         System.Threading.ThreadPool.QueueUserWorkItem(_ => {
-          // ponytail: 崩溃遗留快照自愈(有文件才碰硬件;放在 LHM Open 前后皆可,趁早还原)
-          RaplPowerLimitService.StartupHealIfNeeded();
-          HardwareService.LibreComputer.Open();
-          System.Windows.Application.Current.Dispatcher.BeginInvoke(new Action(() => {
-            TrayService.StartTimers();
-            TrayService.StartTrayHelperTimers();
-          }), System.Windows.Threading.DispatcherPriority.Background);
+          // ponytail: 工作体分步兜底 —— 线程池上未捕获异常直接终止进程(R15/BUG-22 同款)。
+          // LHM Open 会碰驱动/传感器,启动早期窗口被关时 Application.Current 可能为 null,
+          // 两处都可能在裸奔状态下抛,故各自 try 且互不阻断(传感器挂了仍要起托盘定时器)。
+          try { RaplPowerLimitService.StartupHealIfNeeded(); }
+          catch (Exception ex) { Logger.Error($"[Startup] RaplHeal: {ex.Message}"); }
+          try { HardwareService.LibreComputer.Open(); }
+          catch (Exception ex) { Logger.Error($"[Startup] LibreComputer.Open: {ex.Message}"); }
+          // ponytail: 预热性能页机型能力探针(合计 ~400ms 的 WMI)—— 预热后 PerfPage 的
+          // 构造函数能纯读缓存地定好卡片可见性,首帧就是正确布局,不会"先空后跳"。
+          try { OmenSuperHub.Pages.PerfPage.PrimeCapabilityProbes(); }
+          catch (Exception ex) { Logger.Verbose($"[PrimeProbes] {ex.Message}"); }
+          try {
+            System.Windows.Application.Current?.Dispatcher.BeginInvoke(new Action(() => {
+              TrayService.StartTimers();
+              TrayService.StartTrayHelperTimers();
+            }), System.Windows.Threading.DispatcherPriority.Background);
+          } catch (Exception ex) { Logger.Error($"[Startup] StartTimers dispatch: {ex.Message}"); }
         });
 
         // Start HWiNFO64 integration if enabled
@@ -449,6 +489,318 @@ namespace OmenSuperHub {
           } finally { svc.Dispose(); }
         });
       } catch (Exception ex) { Logger.Verbose($"[PrefetcherStartup] {ex.Message}"); }
+    }
+
+    /// <summary>二级弹窗骨架断言:每个 FluentWindow 弹窗必须恰好一个 ui:TitleBar、可见的关闭键、
+    /// 非零高度,且自定义 Header 不可命中(否则 Wpf.Ui 的 WM_NCHITTEST 不发 HTCAPTION,整条栏拖不动)。
+    /// ponytail: 不 Show —— ctor 里的 Loaded 逻辑会摸注册表/起后台线程,这里要验的只是骨架;
+    /// 内容摘出来挂普通 Border 上 Measure 一遍就能把 ControlTemplate 套出来。</summary>
+    static string RunDialogChromeSelfCheck() {
+      var fails = new System.Collections.Generic.List<string>();
+      var cases = new[] {
+        new { Name = "StorageCleanWindow", Args = new object[0], Type = typeof(Views.StorageCleanWindow) },
+        new { Name = "SystemOptimizeWindow", Args = new object[0], Type = typeof(Views.SystemOptimizeWindow) },
+        new { Name = "ProcessSelectDialog", Args = new object[] { null }, Type = typeof(Views.ProcessSelectDialog) },
+        new { Name = "OsdKindsWindow", Args = new object[0], Type = typeof(Views.OsdKindsWindow) },
+        new { Name = "LanShareWindow", Args = new object[0], Type = typeof(Views.LanShareWindow) },
+        new { Name = "HelpWindow", Args = new object[0], Type = typeof(Views.HelpWindow) },
+        new { Name = "PipelineEditorWindow", Args = new object[] { null, null, false }, Type = typeof(Views.PipelineEditorWindow) },
+      };
+      foreach (var c in cases) {
+        System.Windows.Window w = null;
+        try {
+          w = (System.Windows.Window)Activator.CreateInstance(c.Type, c.Args);
+          var content = (System.Windows.UIElement)w.Content;
+          w.Content = null;
+          var host = new System.Windows.Controls.Border { Child = content, Width = 1200, Height = 900 };
+          host.Measure(new System.Windows.Size(1200, 900));
+          host.Arrange(new System.Windows.Rect(0, 0, 1200, 900));
+          host.UpdateLayout();
+
+          var bars = new System.Collections.Generic.List<System.Windows.DependencyObject>();
+          CollectByTypeName(host, "TitleBar", bars);
+          if (bars.Count != 1) { fails.Add($"{c.Name}: TitleBar count={bars.Count}, expected 1"); continue; }
+
+          int close = 0;
+          bool badForeground = false;
+          foreach (var d in DescendantsOf(bars[0])) {
+            if (d.GetType().Name != "TitleBarButton") continue;
+            var fe = d as System.Windows.FrameworkElement;
+            if (fe == null || fe.Visibility != System.Windows.Visibility.Visible) continue;
+            var bt = d.GetType().GetProperty("ButtonType");
+            string kind = bt == null ? "" : bt.GetValue(d, null).ToString();
+            if (kind == "Close") close++;
+            // 关闭键的 X 是 Path,填充来自 RenderButtonsForeground;为空时按钮存在但看不见
+            var fg = d.GetType().GetProperty("RenderButtonsForeground")?.GetValue(d, null) as System.Windows.Media.Brush;
+            if (fg == null) badForeground = true;
+          }
+          if (close != 1) fails.Add($"{c.Name}: visible Close buttons={close}, expected 1");
+          if (badForeground) fails.Add($"{c.Name}: caption button foreground is null (invisible X)");
+          if (((System.Windows.FrameworkElement)bars[0]).ActualHeight <= 0) fails.Add($"{c.Name}: TitleBar height=0 (no drag area)");
+
+          var header = bars[0].GetType().GetProperty("Header")?.GetValue(bars[0], null) as System.Windows.UIElement;
+          var titleBlock = bars[0].GetType()
+            .GetField("_titleBlock", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)
+            ?.GetValue(bars[0]);
+          if (header != null && !ReferenceEquals(header, titleBlock) && header.IsHitTestVisible)
+            fails.Add($"{c.Name}: TitleBar.Header is hit-testable — title bar cannot be dragged");
+
+          // 标题栏左边界必须和弹窗内容区的 16px 边距对齐。Wpf.Ui 的 TitleBar 模板会在 Header
+          // 左边塞一个 TitleGrid(装 Icon),它的 Margin 取 Padding,于是 Header.x = Padding.L+R。
+          // 默认 16,4,16,4 得到 x=32(比正文右缩 16);Title/Icon 都为空时 TitleGrid 折叠,
+          // Padding 完全失效、Header 掉到 x=0(比正文左伸 16)。两种都算错。
+          var hdrFe = header as System.Windows.FrameworkElement;
+          if (hdrFe != null && hdrFe.Visibility == System.Windows.Visibility.Visible) {
+            var pt = hdrFe.TransformToAncestor(host).Transform(new System.Windows.Point(0, 0));
+            if (Math.Abs(pt.X - 16) > 0.6)
+              fails.Add($"{c.Name}: TitleBar.Header.x={pt.X:0.0}, expected 16 (aligns with content margin)");
+          }
+        } catch (System.Exception ex) {
+          fails.Add($"{c.Name}: threw {(ex.InnerException ?? ex).GetType().Name}: {(ex.InnerException ?? ex).Message}");
+        } finally {
+          try { w?.Close(); } catch { }
+        }
+      }
+      return fails.Count == 0 ? "PASS (" + cases.Length + " dialogs)" : "FAIL: " + string.Join(" | ", fails);
+    }
+
+    /// <summary>页面标题排版断言:11 页共用 FontSizePageTitle(24) + Medium。
+    /// ponytail: 只实例化 SettingsPage 一页 —— 它是 11 处里唯一 ctor 纯 InitializeComponent 的,
+    /// 其余页 ctor 有 WMI/配置副作用;这 11 处是同一批机械替换,验 token + 一处实际解析足够。
+    /// 真正会静默坏掉的是 token 键名拼错:DynamicResource 找不到时退回继承字号(12),构建不报错。</summary>
+    static string RunPageTitleTypeSelfCheck() {
+      var fails = new System.Collections.Generic.List<string>();
+      object token = Application.Current.TryFindResource("FontSizePageTitle");
+      if (!(token is double size) || Math.Abs(size - 24) > 0.01)
+        fails.Add($"FontSizePageTitle = {(token ?? "null")}, expected 24");
+      try {
+        var page = new Pages.SettingsPage();
+        var heading = page.FindName("HeadingSettings") as System.Windows.Controls.TextBlock;
+        if (heading == null) fails.Add("HeadingSettings not found");
+        else {
+          if (Math.Abs(heading.FontSize - 24) > 0.01)
+            fails.Add($"HeadingSettings.FontSize = {heading.FontSize}, expected 24 (token unresolved?)");
+          if (heading.FontWeight != System.Windows.FontWeights.Medium)
+            fails.Add($"HeadingSettings.FontWeight = {heading.FontWeight}, expected Medium");
+        }
+      } catch (System.Exception ex) { fails.Add($"SettingsPage threw {ex.GetType().Name}: {ex.Message}"); }
+      return fails.Count == 0 ? "PASS (11 pages, 1 sampled)" : "FAIL: " + string.Join(" | ", fails);
+    }
+
+    /// <summary>卡头排版断言:每张卡的标题 = FontSizeTitle(14) SemiBold,图标 = FontSizeHeader(18)。
+    /// 改造前同一层级有 14/13/继承(12) 三种标题字号和 18/16/14 三种图标字号,跨页翻动标题会跳。
+    /// ponytail: 只量 SettingsPage(18 张卡,ctor 纯 InitializeComponent)——
+    /// 这是全站统一的机械替换,验一页足够;真要坏是某页新加的卡又手写了一个字号。</summary>
+    static string RunCardHeaderTypeSelfCheck() {
+      var fails = new System.Collections.Generic.List<string>();
+      var pages = new System.Windows.Controls.Page[] { new Pages.SettingsPage(), new Pages.OtherPage() };
+      foreach (var page in pages) {
+        var content = (System.Windows.UIElement)page.Content;
+        page.Content = null;
+        var host = new System.Windows.Controls.Border { Child = content, Width = 1100 };
+        host.Measure(new System.Windows.Size(1100, 4000));
+        host.Arrange(new System.Windows.Rect(0, 0, 1100, 3000));
+        host.UpdateLayout();
+
+        int cards = 0;
+        foreach (var d in DescendantsOf(host)) {
+          string tn = d.GetType().Name;
+          if (tn != "CardControl" && tn != "CardExpander") continue;
+          cards++;
+          var header = d.GetType().GetProperty("Header")?.GetValue(d, null) as System.Windows.DependencyObject;
+          if (header == null) continue;
+
+          System.Windows.Controls.TextBlock title = null;
+          System.Windows.FrameworkElement icon = null;
+          foreach (var h in DescendantsOf(header)) {
+            if (icon == null && h.GetType().Name == "SymbolIcon") icon = h as System.Windows.FrameworkElement;
+            var tb = h as System.Windows.Controls.TextBlock;
+            if (title == null && tb != null && tb.FontWeight.ToOpenTypeWeight() >= 600
+                && !string.IsNullOrWhiteSpace(tb.Text)) title = tb;
+          }
+          string where = page.GetType().Name + " #" + cards + " \"" + (title?.Text ?? "?") + "\"";
+          if (title != null && Math.Abs(title.FontSize - 14) > 0.01)
+            fails.Add(where + " title FontSize=" + title.FontSize + ", expected 14");
+          // 卡头标题不得自带 Foreground:AccentOmen 与 TextPrimary 同色(写上去零强调),
+          // 而且显式色会压掉模板 HeaderContentPresenter 的禁用态变灰。标题一律继承。
+          if (title != null && title.ReadLocalValue(System.Windows.Controls.TextBlock.ForegroundProperty)
+                != System.Windows.DependencyProperty.UnsetValue)
+            fails.Add(where + " title has explicit Foreground (should inherit)");
+          if (icon != null) {
+            var fs = (double)icon.GetType().GetProperty("FontSize").GetValue(icon, null);
+            if (Math.Abs(fs - 18) > 0.01) fails.Add(where + " icon FontSize=" + fs + ", expected 18");
+          }
+        }
+        if (cards == 0) fails.Add(page.GetType().Name + ": no cards found (visual tree not built?)");
+      }
+      return fails.Count == 0 ? "PASS (2 pages)" : "FAIL: " + string.Join(" | ", fails);
+    }
+
+    /// <summary>空态断言:四处「列表为空」的提示必须共用 OmenEmptyState,且文案非空。
+    /// 改造前三处各写一套字号/颜色/宽度(12 Medium / 13 / 13+MaxWidth),口径也不一致。</summary>
+    static string RunEmptyStateSelfCheck() {
+      var fails = new System.Collections.Generic.List<string>();
+      var style = Application.Current.TryFindResource("OmenEmptyState") as System.Windows.Style;
+      if (style == null) { fails.Add("OmenEmptyState style missing"); return "FAIL: " + string.Join(" | ", fails); }
+
+      var probes = new System.Collections.Generic.List<System.Windows.FrameworkElement>();
+      try {
+        var sysopt = new Views.SystemOptimizeWindow();
+        probes.Add((System.Windows.FrameworkElement)sysopt.FindName("ServiceEmptyHint"));
+        probes.Add((System.Windows.FrameworkElement)sysopt.FindName("StartupEmptyHint"));
+        sysopt.Close();
+      } catch (System.Exception ex) { fails.Add("SystemOptimizeWindow threw " + ex.GetType().Name + ": " + ex.Message); }
+      try {
+        var psd = new Views.ProcessSelectDialog(null);
+        probes.Add((System.Windows.FrameworkElement)psd.FindName("EmptyHint"));
+        psd.Close();
+      } catch (System.Exception ex) { fails.Add("ProcessSelectDialog threw " + ex.GetType().Name + ": " + ex.Message); }
+      try {
+        var auto = new Pages.AutomationPage();
+        probes.Add((System.Windows.FrameworkElement)auto.FindName("AutoNoPipelinesLabel"));
+      } catch (System.Exception ex) { fails.Add("AutomationPage threw " + ex.GetType().Name + ": " + ex.Message); }
+
+      foreach (var fe in probes) {
+        if (fe == null) { fails.Add("empty-state element not found"); continue; }
+        var tb = fe as System.Windows.Controls.TextBlock;
+        if (tb == null) { fails.Add(fe.Name + ": not a TextBlock"); continue; }
+        if (!ReferenceEquals(tb.Style, style))
+          fails.Add(fe.Name + ": does not use OmenEmptyState");
+      }
+      return fails.Count == 0 ? "PASS (" + probes.Count + " empty states)" : "FAIL: " + string.Join(" | ", fails);
+    }
+
+    /// <summary>弹窗严重度断言:Info/Warn/Error 三种提示必须在正文卡片左侧带一条严重度色条,
+    /// 且色条颜色与标题图标一致。改造前三者只有图标颜色不同,卡片底色/边框/标题全一样。</summary>
+    static string RunDialogSeveritySelfCheck() {
+      var fails = new System.Collections.Generic.List<string>();
+      var cases = new[] {
+        new { Name = "Info",  Icon = Wpf.Ui.Controls.SymbolRegular.Info24,          BrushKey = "AccentBlueBrush" },
+        new { Name = "Warn",  Icon = Wpf.Ui.Controls.SymbolRegular.Warning24,       BrushKey = "AccentYellowBrush" },
+        new { Name = "Error", Icon = Wpf.Ui.Controls.SymbolRegular.DismissCircle24, BrushKey = "AccentRedBrush" },
+      };
+      foreach (var c in cases) {
+        try {
+          var root = Utils.DialogHelper.BuildDialogBody(
+            "selftest", c.Name, c.Icon, c.BrushKey, "#FF000000", false, false, null, null, new int[1]);
+
+          // ponytail: 不 Show 窗口,模板没套上,可视树里只有根 StackPanel —— 按结构直取,
+          // 不走 DescendantsOf(root)。root.Children = [标题栏 Border, 正文卡片 Border]。
+          var titleHost = root.Children[0] as System.Windows.Controls.Border;
+          var titleBar = titleHost == null ? null : titleHost.Child as Wpf.Ui.Controls.TitleBar;
+          var header = titleBar == null ? null : titleBar.Header as System.Windows.Controls.StackPanel;
+          var iconEl = header == null ? null : header.Children[0] as Wpf.Ui.Controls.SymbolIcon;
+          System.Windows.Media.Brush iconBrush = iconEl == null ? null : iconEl.Foreground;
+
+          var contentCard = root.Children.Count > 1 ? root.Children[1] as System.Windows.Controls.Border : null;
+          var cardGrid = contentCard == null ? null : contentCard.Child as System.Windows.Controls.Grid;
+          var bar = cardGrid == null ? null : cardGrid.Children[0] as System.Windows.Controls.Border;
+          System.Windows.Media.Brush barBrush = bar == null ? null : bar.Background;
+          if (iconBrush == null) fails.Add(c.Name + ": icon brush null");
+          if (barBrush == null) fails.Add(c.Name + ": severity bar missing");
+          if (iconBrush != null && barBrush != null && !ReferenceEquals(iconBrush, barBrush))
+            fails.Add(c.Name + ": bar color != icon color");
+          var expect = Application.Current.TryFindResource(c.BrushKey) as System.Windows.Media.Brush;
+          if (expect != null && barBrush != null && !ReferenceEquals(expect, barBrush))
+            fails.Add(c.Name + ": bar color != " + c.BrushKey);
+        } catch (System.Exception ex) {
+          fails.Add(c.Name + " threw " + ex.GetType().Name + ": " + ex.Message);
+        }
+      }
+      return fails.Count == 0 ? "PASS (3 severities)" : "FAIL: " + string.Join(" | ", fails);
+    }
+
+    /// <summary>滚动条翻页断言:OmenScrollBar 模板里的两个透明 RepeatButton 必须是 Track 的分区按钮,
+    /// 且上方那个绑定 PageUp。写成 Grid 兄弟节点时两者完全重合,命中只会落在最后一个。</summary>
+    static string RunScrollBarPagingSelfCheck() {
+      var fails = new System.Collections.Generic.List<string>();
+      var style = Application.Current.TryFindResource("OmenScrollBar") as System.Windows.Style;
+      if (style == null) return "FAIL: OmenScrollBar style missing";
+      var sb = new System.Windows.Controls.Primitives.ScrollBar { Orientation = System.Windows.Controls.Orientation.Vertical };
+      sb.Style = style;
+      var host = new System.Windows.Controls.Border { Child = sb, Width = 12, Height = 400 };
+      host.Measure(new System.Windows.Size(12, 400));
+      host.Arrange(new System.Windows.Rect(0, 0, 12, 400));
+      host.UpdateLayout();
+
+      System.Windows.Controls.Primitives.Track track = null;
+      foreach (var d in DescendantsOf(sb)) {
+        track = d as System.Windows.Controls.Primitives.Track;
+        if (track != null) break;
+      }
+      if (track == null) { fails.Add("PART_Track missing"); return "FAIL: " + string.Join(" | ", fails); }
+
+      var up = track.DecreaseRepeatButton as System.Windows.Controls.Primitives.RepeatButton;
+      var down = track.IncreaseRepeatButton as System.Windows.Controls.Primitives.RepeatButton;
+      if (up == null) fails.Add("DecreaseRepeatButton missing (track top not clickable)");
+      if (down == null) fails.Add("IncreaseRepeatButton missing (track bottom not clickable)");
+      if (up != null && !ReferenceEquals(up.Command, System.Windows.Controls.Primitives.ScrollBar.PageUpCommand))
+        fails.Add("DecreaseRepeatButton command != PageUp");
+      if (down != null && !ReferenceEquals(down.Command, System.Windows.Controls.Primitives.ScrollBar.PageDownCommand))
+        fails.Add("IncreaseRepeatButton command != PageDown");
+
+      int loose = 0;
+      foreach (var d in DescendantsOf(sb)) {
+        var rb = d as System.Windows.Controls.Primitives.RepeatButton;
+        if (rb == null) continue;
+        if (ReferenceEquals(rb, up) || ReferenceEquals(rb, down)) continue;
+        loose++;
+      }
+      if (loose > 0) fails.Add(loose + " loose RepeatButton(s) outside Track (they would overlap)");
+      return fails.Count == 0 ? "PASS (PageUp/PageDown on track halves)" : "FAIL: " + string.Join(" | ", fails);
+    }
+
+    /// <summary>托盘图标重建断言:explorer.exe 重启会广播 TaskbarCreated,收到后必须重新 NIM_ADD。
+    /// 改造前没有监听该广播,_added 恒为 true,Update() 永远只发 NIM_MODIFY(对已清空的图标无效),
+    /// 图标永久消失、只能重启程序。这里真的把消息投递给 NativeTrayIcon 的窗口过程,断言
+    /// (a) 消息号非 0 (b) 计数 +1 (c) 重建后仍处于已注册状态。</summary>
+    static string RunTrayRecreateSelfCheck() {
+      var fails = new System.Collections.Generic.List<string>();
+      if (Utils.NativeTrayIcon.TaskbarCreatedMessage == 0) {
+        fails.Add("RegisterWindowMessage(\"TaskbarCreated\") returned 0");
+        return "FAIL: " + string.Join(" | ", fails);
+      }
+      Utils.NativeTrayIcon tray = null;
+      try {
+        tray = new Utils.NativeTrayIcon();
+        tray.SetIcon(System.Drawing.SystemIcons.Application);
+        tray.SetTip("selftest");
+        tray.Show();
+        if (!tray.IsRegistered) { fails.Add("icon not registered before broadcast"); }
+        int before = tray.TaskbarRecreateCount;
+
+        // 真投递:SendMessage 走窗口过程,与 explorer 广播同一条路径
+        var hwnd = (System.IntPtr)typeof(Utils.NativeTrayIcon)
+          .GetProperty("Handle", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance)
+          .GetValue(tray, null);
+        if (hwnd == System.IntPtr.Zero) fails.Add("tray window handle is zero");
+        else {
+          SendMessage(hwnd, Utils.NativeTrayIcon.TaskbarCreatedMessage, System.IntPtr.Zero, System.IntPtr.Zero);
+          if (tray.TaskbarRecreateCount != before + 1)
+            fails.Add("TaskbarCreated not handled (count " + before + " -> " + tray.TaskbarRecreateCount + ")");
+          if (!tray.IsRegistered) fails.Add("icon not re-registered after broadcast");
+        }
+      } catch (System.Exception ex) {
+        fails.Add("threw " + ex.GetType().Name + ": " + ex.Message);
+      } finally {
+        try { tray?.Dispose(); } catch { }
+      }
+      return fails.Count == 0 ? "PASS (TaskbarCreated re-adds icon)" : "FAIL: " + string.Join(" | ", fails);
+    }
+
+    static void CollectByTypeName(System.Windows.DependencyObject root, string typeName,
+                                  System.Collections.Generic.List<System.Windows.DependencyObject> sink) {
+      if (root.GetType().Name == typeName) sink.Add(root);
+      foreach (var d in DescendantsOf(root)) if (d.GetType().Name == typeName) sink.Add(d);
+    }
+
+    static System.Collections.Generic.IEnumerable<System.Windows.DependencyObject> DescendantsOf(System.Windows.DependencyObject root) {
+      int n = System.Windows.Media.VisualTreeHelper.GetChildrenCount(root);
+      for (int i = 0; i < n; i++) {
+        var c = System.Windows.Media.VisualTreeHelper.GetChild(root, i);
+        yield return c;
+        foreach (var d in DescendantsOf(c)) yield return d;
+      }
     }
 
     static string RunFrontendReleaseSelfCheck() {

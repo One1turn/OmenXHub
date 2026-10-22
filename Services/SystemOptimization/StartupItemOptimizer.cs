@@ -63,12 +63,21 @@ namespace OmenSuperHub.Services.SystemOptimization {
       new RunLocation("hklm32Once", RegistryHive.LocalMachine, RegistryView.Registry32, RunOnceSubKey, "本机 (32 位) RunOnce"),
     };
 
-    internal static string DisabledSubKey(string subKey) =>
-      subKey.Contains("RunOnce") ? subKey.Replace("RunOnce", "RunOnceDisabled")
-           : subKey.Replace("Run", "RunDisabled");
-    internal static string EnabledSubKey(string subKey) =>
-      subKey.Contains("RunOnceDisabled") ? subKey.Replace("RunOnceDisabled", "RunOnce")
-           : subKey.Replace("RunDisabled", "Run");
+    // ponytail: BUG-13 加固 —— 旧实现全串 Replace,依赖"常量路径恰好只含一个 Run 子串"的巧合
+    // (如含 "Runtime" 段的路径会被一并改坏)。改为仅变换最后一段且精确匹配:对现有三条常量
+    // (Run/RunOnce/WOW6432Node\Run)严格等价,对任意路径语义正确。往返由 CoreKeepService.SelfCheck 看门。
+    internal static string DisabledSubKey(string subKey) {
+      int slash = subKey.LastIndexOf('\\');
+      string leaf = slash < 0 ? subKey : subKey.Substring(slash + 1);
+      string next = leaf == "Run" ? "RunDisabled" : leaf == "RunOnce" ? "RunOnceDisabled" : leaf;
+      return slash < 0 ? next : subKey.Substring(0, slash + 1) + next;
+    }
+    internal static string EnabledSubKey(string subKey) {
+      int slash = subKey.LastIndexOf('\\');
+      string leaf = slash < 0 ? subKey : subKey.Substring(slash + 1);
+      string next = leaf == "RunDisabled" ? "Run" : leaf == "RunOnceDisabled" ? "RunOnce" : leaf;
+      return slash < 0 ? next : subKey.Substring(0, slash + 1) + next;
+    }
 
     static string[] StartupFolders() {
       var list = new List<string>(2);
@@ -234,7 +243,12 @@ namespace OmenSuperHub.Services.SystemOptimization {
           object raw = dis.GetValue(real, null, RegistryValueOptions.DoNotExpandEnvironmentNames);
 
           using (var runKey = baseKey.CreateSubKey(loc.SubKey, true)) {
-            runKey.SetValue(item.Name, raw, kind);
+            // ponytail: #71 —— 禁用期间该值可能被别处(安装器/其它工具)在 Run 下重建并改过命令,禁用键里的
+            // 副本才是陈旧方。无条件 SetValue 会把用户改动覆盖掉(数据丢失线)。故:Run 下同名已存在 → 只清
+            // 禁用侧副本,不动现值。
+            bool present = runKey.GetValueNames()
+              .Any(n => string.Equals(n, item.Name, StringComparison.OrdinalIgnoreCase));
+            if (!present) runKey.SetValue(item.Name, raw, kind);
           }
           dis.DeleteValue(real, false);
         }
@@ -259,8 +273,30 @@ namespace OmenSuperHub.Services.SystemOptimization {
           ? Directory.CreateDirectory(Path.Combine(parent, "Disabled")).FullName   // 活动 → Disabled\
           : Path.GetDirectoryName(parent);                                            // Disabled\ → 上级活动目录
         string dst = Path.Combine(dstParent, srcName);
-        if (File.Exists(dst)) { try { File.Delete(dst); } catch { return false; } }
-        File.Move(src, dst);
+        // ponytail: 目标同名文件可能不是"同一启动项的残留",而是用户自行放置的(活动目录与
+        // Disabled\ 是两个独立条目,各可单独启停)。直接 Delete 会静默丢失用户文件 →
+        // 改为备份为 .bak(带序号避撞),Move 成功后再删备份,失败则原样保留可恢复。
+        string backup = null;
+        if (File.Exists(dst)) {
+          try {
+            backup = dst + ".bak";
+            int n = 1;
+            while (File.Exists(backup)) backup = dst + ".bak" + (++n);
+            File.Move(dst, backup);
+          } catch { backup = null; return false; }
+        }
+        try {
+          File.Move(src, dst);
+        } catch {
+          if (backup != null) { try { File.Move(backup, dst); } catch { } }  // 还原目标
+          return false;
+        }
+        if (backup != null) { try { File.Delete(backup); } catch { } }
+        // ponytail: 搬迁成功后必须把对象挪到新址 —— UI 不重新 Enumerate(Views/SystemOptimizeWindow 只在进
+        // Tab 时懒加载一次)，同一 StartupItem 会被再点一次。旧代码只改 IsEnabled,FolderPath 仍指已消失的
+        // src → 第二次切换 :259 File.Exists(src) 必假 → 恒失败并弹"修改失败"。Id 也按 FolderId 同规则重算。
+        item.FolderPath = dst;
+        item.Id = FolderId(dst);
         item.IsEnabled = enabled;
         return true;
       } catch { return false; }
@@ -299,21 +335,35 @@ namespace OmenSuperHub.Services.SystemOptimization {
       string text;
       try { text = Environment.ExpandEnvironmentVariables(command.Trim()); }
       catch { return true; }
-      string path;
+      List<string> candidates = new List<string>(8);
       if (text.StartsWith("\"")) {
         int end = text.IndexOf('"', 1);
         if (end <= 1) return false;
-        path = text.Substring(1, end - 1);
+        string path = text.Substring(1, end - 1).Trim().Trim('"');
+        if (path.Length == 0 || path.Contains('%') || !IsFullyQualified(path)) return false;
+        candidates.Add(path);
       } else {
-        string[] parts = text.Split(new char[] { ' ', '\t' }, 2, StringSplitOptions.RemoveEmptyEntries);
-        path = parts.Length > 0 ? parts[0] : text;
+        // ponytail: 未加引号的命令路径可含空格("C:\Program Files\app\x.exe -flag")。旧实现取 Split 首段
+        // 判存在 → 恒为 "C:\Program" 这类残段,把有效项误判失效隐藏。改为按 token 边界累积出候选前缀
+        // (不是任意字符前缀):任一前缀是真实 FILE 即有效；只有全部 token 用尽处才认现存 DIR ——
+        // 于是"exe 已删但 C:\Program Files 目录还在"仍判失效。
+        // 天花板：段间原本是连续空格/制表符时按单空格重建会失配(退回逐段 FILE 判定,最坏等同旧行为)。
+        string[] tokens = text.Split(new char[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+        if (tokens.Length == 0) return true;
+        string first = tokens[0].Trim().Trim('"');
+        if (first.Length == 0 || first.Contains('%') || !IsFullyQualified(first)) return false;
+        candidates.Add(first);
+        for (int i = 1; i < tokens.Length; i++)
+          candidates.Add(candidates[i - 1] + " " + tokens[i]);
       }
-      path = path.Trim().Trim('"');
-      if (path.Length == 0 || path.Contains('%') || !IsFullyQualified(path)) return false;
-      try {
-        if (!File.Exists(path)) return !Directory.Exists(path);
-      } catch { return true; }
-      return false;
+      for (int i = 0; i < candidates.Count; i++) {
+        string path = candidates[i];
+        try {
+          if (File.Exists(path)) return false;
+          if (i == candidates.Count - 1 && Directory.Exists(path)) return false;  // 仅整串可认目录
+        } catch { return true; }
+      }
+      return true;
     }
 
     /// <summary>net481 无 Path.IsPathFullyQualified 的等价实现（盘符或 UNC）。</summary>

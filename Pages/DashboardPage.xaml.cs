@@ -240,11 +240,13 @@ namespace OmenSuperHub.Pages {
           double pageUsedGB = (mem.ullTotalPageFile - mem.ullAvailPageFile) / (1024.0 * 1024 * 1024);
           double pageTotalGB = mem.ullTotalPageFile / (1024.0 * 1024 * 1024);
           DrawMemoryRing(memPct);
+          DrawVirtualMemoryRing(pageTotalGB > 0 ? pageUsedGB / pageTotalGB * 100.0 : -1);
           if (!_memCleanMsgActive) RamDetailText.Text = $"{usedGB:F1} GB / {totalGB:F1} GB";
           RamVirtualText.Text = $"{pageUsedGB:F1} GB / {pageTotalGB:F1} GB";
           if (!_memCleanMsgActive) CleanMemBtn.IsEnabled = true;
         } else {
           DrawMemoryRing(-1);
+          DrawVirtualMemoryRing(-1);
           RamDetailText.Text = "-";
           RamVirtualText.Text = "-";
           CleanMemBtn.IsEnabled = false;
@@ -299,9 +301,11 @@ namespace OmenSuperHub.Pages {
         CpuFanText.Text = cpuFan.ToString("F0") + " RPM";
         CpuFanBar.Foreground = GetGradientBrush(cpuFan, 6400);
         AnimateBar(CpuFanBar, cpuFan);
-        CpuPowerText.Text = HardwareService.GetDisplayCpuPower().ToString("F1") + " W";
-        CpuPowerBar.Foreground = GetGradientBrush(HardwareService.GetDisplayCpuPower(), 150);
-        AnimateBar(CpuPowerBar, HardwareService.GetDisplayCpuPower());
+        // ponytail: 提局部变量 —— 原先每 tick 对同一个显示功耗读 3 次(文本/刷子/进度条)。
+        double cpuPower = HardwareService.GetDisplayCpuPower();
+        CpuPowerText.Text = cpuPower.ToString("F1") + " W";
+        CpuPowerBar.Foreground = GetGradientBrush(cpuPower, 150);
+        AnimateBar(CpuPowerBar, cpuPower);
         CpuClockText.Text = cpuClock.ToString("F0") + " MHz";
         CpuClockBar.Foreground = GetGradientBrush(cpuClock, 6000);
         AnimateBar(CpuClockBar, cpuClock);
@@ -318,9 +322,10 @@ namespace OmenSuperHub.Pages {
         GpuFanText.Text = gpuFan.ToString("F0") + " RPM";
         GpuFanBar.Foreground = GetGradientBrush(gpuFan, 6400);
         AnimateBar(GpuFanBar, gpuFan);
-        GpuPowerText.Text = HardwareService.GetDisplayGpuPower().ToString("F1") + " W";
-        GpuPowerBar.Foreground = GetGradientBrush(HardwareService.GetDisplayGpuPower(), 170);
-        AnimateBar(GpuPowerBar, HardwareService.GetDisplayGpuPower());
+        double gpuPower = HardwareService.GetDisplayGpuPower();
+        GpuPowerText.Text = gpuPower.ToString("F1") + " W";
+        GpuPowerBar.Foreground = GetGradientBrush(gpuPower, 170);
+        AnimateBar(GpuPowerBar, gpuPower);
         GpuClockText.Text = gpuClock.ToString("F0") + " MHz";
         GpuClockBar.Foreground = GetGradientBrush(gpuClock, 3000);
         AnimateBar(GpuClockBar, gpuClock);
@@ -336,11 +341,13 @@ namespace OmenSuperHub.Pages {
           double pageUsedGB = (mem.ullTotalPageFile - mem.ullAvailPageFile) / (1024.0 * 1024 * 1024);
           double pageTotalGB = mem.ullTotalPageFile / (1024.0 * 1024 * 1024);
           DrawMemoryRing(memPct);
+          DrawVirtualMemoryRing(pageTotalGB > 0 ? pageUsedGB / pageTotalGB * 100.0 : -1);
           if (!_memCleanMsgActive) RamDetailText.Text = $"{usedGB:F1} GB / {totalGB:F1} GB";
           RamVirtualText.Text = $"{pageUsedGB:F1} GB / {pageTotalGB:F1} GB";
           if (!_memCleanMsgActive) CleanMemBtn.IsEnabled = true;
         } else {
           DrawMemoryRing(-1);
+          DrawVirtualMemoryRing(-1);
           RamDetailText.Text = "-";
           RamVirtualText.Text = "-";
           CleanMemBtn.IsEnabled = false;
@@ -370,8 +377,12 @@ namespace OmenSuperHub.Pages {
     }
 
     // ponytail: 双列信息行的值写入 — 标签已在 XAML 静态化,这里只写【值】并做 null 防御。
+    // 值未变就跳过赋值: TextBlock.Text 的 setter 即使字符串相同也会 InvalidateMeasure,
+    // 每秒 tick 白跑一遍布局。FloatingWindow 的 SetIfChanged 是同一思路。
     static void SetInfoValue(System.Windows.Controls.TextBlock tb, string value) {
-      if (tb != null) tb.Text = value ?? "";
+      if (tb == null) return;
+      string v = value ?? "";
+      if (!string.Equals(tb.Text, v, StringComparison.Ordinal)) tb.Text = v;
     }
 
     // ponytail: NVIDIA 温度墙/功率限制行无值时整行折叠 —— 标签已静态化,若保留空值会露出
@@ -431,9 +442,12 @@ namespace OmenSuperHub.Pages {
     void UpdateExtraTempRow(System.Windows.Controls.Grid row, System.Windows.Controls.TextBlock tb, string id) {
       if (row == null || tb == null) return;
       bool on = IsExtraEnabled(id) && Services.HardwareService.HasExtraTemp(id);
-      row.Visibility = on ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+      var vis = on ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+      if (row.Visibility != vis) row.Visibility = vis;
       int v = (int)Services.HardwareService.GetDisplayExtraTemp(id);
-      tb.Text = (on && v > 0) ? v + " °C" : "-";
+      // 同 SetInfoValue: 值没变就不写,免掉每秒一次的多余布局。
+      string text = (on && v > 0) ? v + " °C" : "-";
+      if (!string.Equals(tb.Text, text, StringComparison.Ordinal)) tb.Text = text;
     }
 
     void AnimateBar(ProgressBar bar, double newVal) {
@@ -458,9 +472,22 @@ namespace OmenSuperHub.Pages {
     void RefreshStorage() {
       if ((DateTime.UtcNow - _lastStorageRefreshUtc).TotalSeconds < 10) return;
       _lastStorageRefreshUtc = DateTime.UtcNow;
-      StorageBarCanvas.Children.Clear();
-      // ponytail: 柱状图 — 每盘一根竖条。Canvas 220x132:柱宽 24,间隔 6,柱高上限 96(line 12+12+96=120)。
-      // 盘符贴在柱底 96px 处,sizeStr 贴在柱顶上方。上限:>8 盘降级为文字提示(220/(24+6)≈7 盘能整字容纳)。
+      DrawStorageBars();
+    }
+
+    void StorageBarCanvas_SizeChanged(object sender, SizeChangedEventArgs e) {
+      // 卡片宽度随窗口/列宽变化 —— 柱位要重算,否则铺满后会错位。节流不适用(只改布局不改数据)。
+      DrawStorageBars();
+    }
+
+    /// <summary>按 Canvas 实测宽度把各盘柱条均分居中。ponytail: 原实现固定 220 宽 + 标签用
+    /// 固定偏移(-5/-12)定位,盘少时整块贴左、长尺寸文案(279/301G)直接压到相邻柱上。
+    /// 现在:柱槽宽 = 可用宽/盘数,柱宽 = 槽宽-间距;每段文字用 Measure 实测宽度居中,
+    /// 超出槽宽时按槽宽截断(TextTrimming),不会再重叠。</summary>
+    void DrawStorageBars() {
+      var canvas = StorageBarCanvas;
+      if (canvas == null) return;
+      canvas.Children.Clear();
       var drives = new List<(string label, double pct, string sizeStr)>();
       foreach (var drive in DriveInfo.GetDrives()) {
         if (drive.DriveType != DriveType.Fixed || !drive.IsReady) continue;
@@ -474,6 +501,9 @@ namespace OmenSuperHub.Pages {
         drives.Add((label, pct, sizeStr));
       }
 
+      double canvasW = canvas.ActualWidth;
+      if (canvasW < 40) canvasW = 220;   // 首帧尚未布局时的兜底
+
       if (drives.Count == 0) {
         var none = new TextBlock {
           Text = "-", FontSize = 11,
@@ -481,46 +511,114 @@ namespace OmenSuperHub.Pages {
           VerticalAlignment = VerticalAlignment.Center
         };
         Canvas.SetLeft(none, 4); Canvas.SetTop(none, 60);
-        StorageBarCanvas.Children.Add(none);
+        canvas.Children.Add(none);
         return;
       }
-      // ponytail: 超过 7 盘时改为横向铺满、柱宽自适应,避免溢出 Canvas 右边界。
-      double barW = drives.Count > 7
-        ? Math.Max(10, (220 - 6 * (drives.Count - 1)) / (double)drives.Count)
-        : 24.0;
-      double gap = 6.0;
-      const double barMaxH = 96.0;
-      const double baseY = 120.0; // 柱底(留 12px 给盘符标签)
+
       var tertiary = TryFindResource("TextFillColorTertiaryBrush") as Brush;
       var secondary = TryFindResource("TextFillColorSecondaryBrush") as Brush;
-
-      // ponytail: 整块柱网按 startX 居中,适配 1–7 盘 (≤7 固定柱宽 24),
-      // >7 时 barW 收窄铺满再向心偏移。剩 0 slack 时 startX=0 退化为左对齐,无副作用。
-      double startX = Math.Max(0, (220.0 - (drives.Count * barW + (drives.Count - 1) * gap)) / 2.0);
+      const double baseY = StorageBaseY;
 
       for (int i = 0; i < drives.Count; i++) {
-        double x = startX + i * (barW + gap);
-        double pct = Math.Max(0, Math.Min(100, drives[i].pct));
-        double h = barMaxH * pct / 100.0;
+        var g = StorageSlotGeometry(canvasW, drives.Count, i, drives[i].pct);
+        double pct = g.Pct;
+
         var bar = new Border {
-          Width = barW, Height = Math.Max(h, 1),
+          Width = g.BarW, Height = g.BarH,
           Background = GetGradientBrush(pct, 100),
-          CornerRadius = new CornerRadius(2, 2, 0, 0),
-          VerticalAlignment = VerticalAlignment.Bottom
+          CornerRadius = new CornerRadius(3, 3, 0, 0)
         };
-        Canvas.SetLeft(bar, x); Canvas.SetTop(bar, baseY - bar.Height);
-        StorageBarCanvas.Children.Add(bar);
+        Canvas.SetLeft(bar, g.BarX);
+        Canvas.SetTop(bar, g.BarY);
+        canvas.Children.Add(bar);
 
-        var lbl = new TextBlock { Text = drives[i].label, FontSize = 10,
-          Foreground = tertiary, HorizontalAlignment = HorizontalAlignment.Center };
-        Canvas.SetLeft(lbl, x + barW / 2 - 5); Canvas.SetTop(lbl, baseY + 2);
-        StorageBarCanvas.Children.Add(lbl);
+        // 盘符:居中于槽,限制宽度防溢出
+        var lbl = new TextBlock {
+          Text = drives[i].label, FontSize = 10, Foreground = secondary,
+          TextTrimming = TextTrimming.CharacterEllipsis
+        };
+        lbl.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        lbl.Width = Math.Min(lbl.DesiredSize.Width, g.SlotW - 2);
+        Canvas.SetLeft(lbl, g.SlotCenter - lbl.Width / 2);
+        Canvas.SetTop(lbl, baseY + 2);
+        canvas.Children.Add(lbl);
 
-        var sz = new TextBlock { Text = drives[i].sizeStr, FontSize = 9,
-          Foreground = secondary, HorizontalAlignment = HorizontalAlignment.Center };
-        Canvas.SetLeft(sz, x + barW / 2 - 12); Canvas.SetTop(sz, baseY - bar.Height - 14);
-        StorageBarCanvas.Children.Add(sz);
+        // 尺寸文案:柱顶上方,同样实测居中 + 槽宽截断
+        var sz = new TextBlock {
+          Text = drives[i].sizeStr, FontSize = 9, Foreground = tertiary,
+          TextTrimming = TextTrimming.CharacterEllipsis
+        };
+        sz.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        sz.Width = Math.Min(sz.DesiredSize.Width, g.SlotW - 2);
+        Canvas.SetLeft(sz, g.SlotCenter - sz.Width / 2);
+        Canvas.SetTop(sz, baseY - g.BarH - 14);
+        canvas.Children.Add(sz);
       }
+    }
+
+    // ── 储存柱状图几何(纯函数,自检用) ─────────────────────────────
+    const double StorageBarMaxH = 96.0;
+    const double StorageBaseY = 120.0;     // 柱底(留 12px 给盘符)
+    const double StorageMaxSlotW = 120.0;  // 单槽宽度上限 —— 盘少时不散到卡片两端
+    const double StorageBarW = 44.0;
+
+    internal struct StorageSlot {
+      public double SlotW, SlotCenter, BarW, BarH, BarX, BarY, Pct;
+    }
+
+    /// <summary>第 index 根柱的几何。整组在 canvasW 内水平居中:槽宽 = min(canvasW/count, 120),
+    /// 柱宽固定 44(槽过窄时收缩到槽宽-8),柱水平居中于槽。纯函数,不碰 UI —— 供自检断言
+    /// "居中"与"不重叠"。</summary>
+    internal static StorageSlot StorageSlotGeometry(double canvasW, int count, int index, double pct) {
+      var r = new StorageSlot();
+      if (count <= 0) return r;
+      double slotW = Math.Min(canvasW / count, StorageMaxSlotW);
+      double groupW = slotW * count;
+      double startX = Math.Max(0, (canvasW - groupW) / 2.0);
+      double slotCenter = startX + slotW * (index + 0.5);
+      double clamped = Math.Max(0, Math.Min(100, pct));
+      double h = Math.Max(1.0, StorageBarMaxH * clamped / 100.0);
+      double barW = Math.Min(StorageBarW, Math.Max(4.0, slotW - 8));
+      r.SlotW = slotW;
+      r.SlotCenter = slotCenter;
+      r.BarW = barW;
+      r.BarH = h;
+      r.BarX = slotCenter - barW / 2.0;
+      r.BarY = StorageBaseY - h;
+      r.Pct = clamped;
+      return r;
+    }
+
+    /// <summary>自检:任意盘数下整组水平居中、相邻柱不重叠、柱不越界。</summary>
+    public static string StorageBarSelfCheck() {
+      var fails = new List<string>();
+      foreach (double canvasW in new[] { 300.0, 520.0, 900.0 }) {
+        foreach (int count in new[] { 1, 2, 3, 5, 8, 12 }) {
+          var first = StorageSlotGeometry(canvasW, count, 0, 50);
+          var last = StorageSlotGeometry(canvasW, count, count - 1, 50);
+          // 居中:最左柱左缘到画布左边 == 最右柱右缘到画布右边
+          double leftGap = first.BarX;
+          double rightGap = canvasW - (last.BarX + last.BarW);
+          if (Math.Abs(leftGap - rightGap) > 0.51)
+            fails.Add($"w={canvasW} n={count} 未居中(左留 {leftGap:F1} vs 右留 {rightGap:F1})");
+          // 不重叠 + 不越界
+          for (int i = 0; i < count; i++) {
+            var s = StorageSlotGeometry(canvasW, count, i, 50);
+            if (s.BarX < -0.01 || s.BarX + s.BarW > canvasW + 0.01)
+              fails.Add($"w={canvasW} n={count} i={i} 柱越界({s.BarX:F1}+{s.BarW:F1} > {canvasW})");
+            if (i > 0) {
+              var prev = StorageSlotGeometry(canvasW, count, i - 1, 50);
+              if (prev.BarX + prev.BarW > s.BarX + 0.01)
+                fails.Add($"w={canvasW} n={count} i={i} 柱重叠");
+            }
+          }
+        }
+      }
+      // 柱高与占比单调:0% 最矮(1px 兜底)、100% = 96
+      if (StorageSlotGeometry(500, 3, 0, 0).BarH != 1.0) fails.Add("0% 柱高应为 1px 兜底");
+      if (Math.Abs(StorageSlotGeometry(500, 3, 0, 100).BarH - StorageBarMaxH) > 0.01)
+        fails.Add("100% 柱高应等于 StorageBarMaxH");
+      return fails.Count == 0 ? "[StorageBar] PASS" : "[StorageBar] FAIL: " + string.Join("; ", fails.ToArray());
     }
 
     // ponytail: _memCleanMsgActive —— 清理结果消息的 3s 展示窗内,屏蔽 timer tick 对
@@ -530,25 +628,14 @@ namespace OmenSuperHub.Pages {
 
     async void CleanMemory_Click(object sender, RoutedEventArgs e) {
       try {
-        var memBefore = GetMemoryStatus();
-        ulong usedBefore = memBefore.ullTotalPhys - memBefore.ullAvailPhys;
-
         _memCleanMsgActive = true;
         CleanMemBtn.IsEnabled = false;
         CleanMemBtn.Content = Strings.DashboardMemoryCleaning;
 
         // ponytail: 全进程 EmptyWorkingSet 是秒级批量操作,丢后台线程 —— 同步跑在 UI 线程
-        // 会冻结界面,"清理中"文案根本来不及渲染。
-        ulong usedAfter = await Task.Run(() => {
-          foreach (var proc in Process.GetProcesses()) {
-            try { using (proc) NativeMethods_Proc.EmptyWorkingSet(proc.Handle); } catch { }
-          }
-          var memAfter = GetMemoryStatus();
-          return memAfter.ullTotalPhys - memAfter.ullAvailPhys;
-        });
-
-        long freed = (long)(usedBefore - usedAfter);
-        if (freed < 0) freed = 0;
+        // 会冻结界面,"清理中"文案根本来不及渲染。实现与自动化「清理内存」步、
+        // HTTP API POST /api/memory/clean 共用同一份 AutomationProcessor.CleanMemory。
+        long freed = await Task.Run(() => AutomationProcessor.CleanMemory());
 
         RamDetailText.Text = freed > 0 ? Strings.DashboardMemoryFreedFormat(FormatBytes((ulong)freed)) : Strings.DashboardMemoryNoClean;
         RamDetailText.Foreground = freed > 0 ? _brushAccentGreen : _brushAccentYellow;
@@ -657,24 +744,28 @@ namespace OmenSuperHub.Pages {
       }
     }
 
+    // ponytail: 增量同步而非 Clear+重建 —— 总览页被 CachedPageService 缓存,每次进入都会走
+    // Loaded→LoadPresetState。原先无条件 Items.Clear() 会把下拉列表清空再逐条 Add,
+    // 用户第一眼看到的总是"列表先塌掉再重新长出来"的重排。现在统一走 ComboSync:
+    // 键序列一致就只刷新文案/选中项,Items 集合原封不动,视觉上零变化。
     void LoadPresetState() {
-      PresetCombo.Items.Clear();
       var all = PresetManager.EnumerateAllPresets();
-      int idx = -1;
       string current = ConfigService.Preset;
       if (string.IsNullOrEmpty(current)) current = "GpuPriority";
-      for (int i = 0; i < all.Count; i++) {
-        var (display, key) = all[i];
-        PresetCombo.Items.Add(new ComboBoxItem { Content = display, Tag = key });
-        if (key == current) idx = i;
-      }
+
+      var pairs = new List<(string Display, string Key)>(all.Count);
+      foreach (var (display, key) in all) pairs.Add((display, key));
+
       bool prevLoading = _loading;
       _loading = true;
-      if (idx >= 0) PresetCombo.SelectedIndex = idx;
-      else if (PresetCombo.Items.Count > 1) PresetCombo.SelectedIndex = 1;
+      Utils.ComboSync.SyncTagged(PresetCombo, pairs, current, fallbackIndex: 1);
       _loading = prevLoading;
       UpdatePresetButtons();
     }
+
+    /// <summary>增量同步自检已抽到 Utils.ComboSync.SelfCheck(三页共用)。</summary>
+    public static string PresetComboSyncSelfCheck() => Utils.ComboSync.SelfCheck();
+
 
     static string PresetDisplayName(string key) {
       if (key == "Extreme") return Strings.PresetExtreme;
@@ -753,7 +844,7 @@ namespace OmenSuperHub.Pages {
       _lastRadarProfile = prof; _lastRadarLang = Strings.Current; _lastRadarTheme = ConfigService.Theme;
       RadarCanvas.Children.Clear();
 
-      const double R = 46.0;
+      const double R = 34.0;
       double cx = RadarCanvas.Width / 2.0, cy = RadarCanvas.Height / 2.0;
       // 轴角度(度,0=正上,顺时针):上右下左 → CPU/GPU/续航/安静
       double[] anglesDeg = { 0, 90, 180, 270 };
@@ -785,18 +876,21 @@ namespace OmenSuperHub.Pages {
         var axis = new Line { X1 = cx, Y1 = cy, X2 = AxisPoint(i, R).X, Y2 = AxisPoint(i, R).Y,
                               Stroke = stroke, StrokeThickness = 0.6, Opacity = 0.4 };
         RadarCanvas.Children.Add(axis);
-        var lp = AxisPoint(i, R + 10);
         var tb = new TextBlock {
           Text = labels[i], FontSize = 9,
           Foreground = TryFindResource("TextFillColorTertiaryBrush") as Brush ?? stroke,
           Opacity = 0.85
         };
-        // ponytail: 标签锚点靠端点偏移,右轴外推、左轴右拉以贴轴线对齐
+        // ponytail: 标签改贴画布内缘(原按 AxisPoint(i, R+10) 端点偏移; R 缩到 34 后端点内移,
+        // 再按端点偏移标签会重新出框/压到顶点圆点)。左右标签下移 4px 避开顶点圆点:
+        // 中文 18px 居中尚可, 英文 "Quiet" 24px 居中必压左顶点圆点(实测 probe10), 下移后三语零重叠。
+        tb.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        double tw = tb.DesiredSize.Width, th = tb.DesiredSize.Height;
         switch (i) {
-          case 0: tb.HorizontalAlignment = HorizontalAlignment.Center; Canvas.SetLeft(tb, lp.X - 6); Canvas.SetTop(tb, lp.Y); break;
-          case 1: Canvas.SetLeft(tb, lp.X - 2); Canvas.SetTop(tb, lp.Y - 6); break;
-          case 2: tb.HorizontalAlignment = HorizontalAlignment.Center; Canvas.SetLeft(tb, lp.X - 6); Canvas.SetTop(tb, lp.Y - 12); break;
-          default: Canvas.SetLeft(tb, lp.X - 16); Canvas.SetTop(tb, lp.Y - 6); break;
+          case 0: Canvas.SetLeft(tb, cx - tw / 2); Canvas.SetTop(tb, 0); break;
+          case 1: Canvas.SetLeft(tb, RadarCanvas.Width - tw); Canvas.SetTop(tb, cy + 4); break;
+          case 2: Canvas.SetLeft(tb, cx - tw / 2); Canvas.SetTop(tb, RadarCanvas.Height - th); break;
+          default: Canvas.SetLeft(tb, 0); Canvas.SetTop(tb, cy + 4); break;
         }
         RadarCanvas.Children.Add(tb);
       }
@@ -858,14 +952,33 @@ namespace OmenSuperHub.Pages {
       MemRingPctText.Text = pct.ToString("F0") + "%";
     }
 
+    // ponytail: 虚拟内存环 —— 与物理环同款几何但 84px(半径 28、中心 42),
+    // 只作次要指示,故不跟利用率渐变、固定走次级描边色。pct<0 = 监控关闭。
+    double _lastMemVirtPct = double.NaN;
+
+    void DrawVirtualMemoryRing(double pct) {
+      if (MemVirtRingTrack == null || MemVirtRingArc == null) return;
+      if (_lastMemVirtPct == pct) return;
+      _lastMemVirtPct = pct;
+      if (pct < 0) {
+        MemVirtRingArc.Data = null;
+        MemVirtPctText.Text = "-";
+        RingPaths(MemVirtRingTrack, MemVirtRingArc, 0, 42, 28);
+        return;
+      }
+      MemVirtRingArc.Stroke = GetGradientBrush(pct, 100);
+      RingPaths(MemVirtRingTrack, MemVirtRingArc, pct / 100.0, 42, 28);
+      MemVirtPctText.Text = pct.ToString("F0") + "%";
+    }
+
     // ponytail: 共享圆环几何 — track 始终画整环,arc 画 pct(0..1)的进度弧。
-    // 半径 38、中心 56 对齐 112x112 Grid(系统状态圆环 + 运存圆环同款)。
+    // 默认 112x112(中心 56、半径 38),系统状态圆环 + 运存圆环同款;虚拟内存环传 42/28。
     // 参数全限定 System.Windows.Shapes.Path 以避开 System.IO.Path 命名冲突。
     // track 用两个半弧拼接:ArcSegment 在近 360° 时会被光栅器塌缩为空(经典 WPF bug,
     // WPF ArcSegment 的渲染器对大圆弧退化),导致底环不显示。两段半弧(<180° 各自稳定渲染)规避。
-    static void RingPaths(System.Windows.Shapes.Path track, System.Windows.Shapes.Path arc, double pct) {
-      const double r = 38.0;
-      double cx = 56.0, cy = 56.0;
+    static void RingPaths(System.Windows.Shapes.Path track, System.Windows.Shapes.Path arc, double pct,
+                          double cx = 56.0, double r = 38.0) {
+      double cy = cx;
       // track: 两个半弧(顶→底、底→顶)画整环,规避近 360° 退化
       var trackGeo = new StreamGeometry();
       using (var ctx = trackGeo.Open()) {
@@ -965,7 +1078,6 @@ namespace OmenSuperHub.Pages {
       string preset = item?.Tag as string;
       bool isCustom = !string.IsNullOrEmpty(preset) && PresetManager.IsCustom(preset);
       PresetRenameBtn.Visibility = isCustom ? Visibility.Visible : Visibility.Collapsed;
-      PresetSaveBtn.Visibility = isCustom ? Visibility.Visible : Visibility.Collapsed;
     }
 
     void PresetRename_Click(object sender, RoutedEventArgs e) {
@@ -993,15 +1105,9 @@ namespace OmenSuperHub.Pages {
       root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
       root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-      root.Children.Add(new Border {
-        BorderBrush = TryFindResource("BorderSubtleBrush") as Brush,
-        BorderThickness = new Thickness(0, 0, 0, 1),
-        Padding = new Thickness(16, 12, 16, 12),
-        Child = new TextBlock {
-          Text = Strings.RenamePresetTitle,
-          FontSize = 14, FontWeight = FontWeights.SemiBold
-        }
-      });
+      // ponytail: 三处内联弹窗统一走 DialogHelper.MakeTitleBar(图标+标题+关闭键+拖拽区)。
+      root.Children.Add(OmenSuperHub.Utils.DialogHelper.MakeTitleBar(
+        Strings.RenamePresetTitle, Wpf.Ui.Controls.SymbolRegular.Edit24));
 
       var card = new Border {
         Background = TryFindResource("CardBackgroundFillColorDefaultBrush") as Brush,
@@ -1032,15 +1138,14 @@ namespace OmenSuperHub.Pages {
       root.Children.Add(contentArea);
 
       var btnPanel = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
-      var renameBtn = new Button {
-        Content = Strings.CustomRename, MinWidth = 80, Height = 30,
-        Padding = new Thickness(16, 4, 16, 4), Margin = new Thickness(0, 0, 8, 0)
+      var renameBtn = new Wpf.Ui.Controls.Button {
+        Content = Strings.CustomRename, MinWidth = 80, Height = 32,
+        Appearance = Wpf.Ui.Controls.ControlAppearance.Primary, Margin = new Thickness(0, 0, 8, 0)
       };
       renameBtn.Click += (s, a) => { dialog.DialogResult = true; };
       btnPanel.Children.Add(renameBtn);
-      var cancelBtn = new Button {
-        Content = Strings.AutomationCancel, MinWidth = 80, Height = 30,
-        Padding = new Thickness(16, 4, 16, 4)
+      var cancelBtn = new Wpf.Ui.Controls.Button {
+        Content = Strings.AutomationCancel, MinWidth = 80, Height = 32
       };
       cancelBtn.Click += (s, a) => dialog.Close();
       btnPanel.Children.Add(cancelBtn);
@@ -1058,85 +1163,15 @@ namespace OmenSuperHub.Pages {
       if (dialog.ShowDialog() == true) {
         string newName = tb.Text.Trim();
         if (string.IsNullOrEmpty(newName)) {
-          var errDialog = new Wpf.Ui.Controls.FluentWindow {
-            Title = Strings.Error,
-            Width = 340, Height = 180,
-            WindowStartupLocation = WindowStartupLocation.CenterOwner,
-            Owner = dialog,
-            ResizeMode = ResizeMode.NoResize,
-            ShowInTaskbar = false,
-            WindowBackdropType = Wpf.Ui.Controls.WindowBackdropType.Mica,
-            ExtendsContentIntoTitleBar = true,
-            Background = Brushes.Transparent
-          };
-          // ponytail: 关闭前断开 Owner,避免 owned window 关闭把主窗口误最小化(通用弹窗 bug)
-          OmenSuperHub.Utils.WindowHelper.DetachOwnerOnClose(errDialog);
-          var errRoot = new Grid();
-          errRoot.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-          errRoot.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-          errRoot.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-          errRoot.Children.Add(new Border {
-            BorderBrush = TryFindResource("BorderSubtleBrush") as Brush,
-            BorderThickness = new Thickness(0, 0, 0, 1),
-            Padding = new Thickness(16, 12, 16, 12),
-            Child = new TextBlock { Text = Strings.Error, FontSize = 14, FontWeight = FontWeights.SemiBold }
-          });
-
-          var errCard = new Border {
-            Background = TryFindResource("CardBackgroundFillColorDefaultBrush") as Brush,
-            CornerRadius = new CornerRadius(6),
-            Padding = new Thickness(12, 14, 12, 14),
-            Margin = new Thickness(12, 8, 12, 8),
-            VerticalAlignment = VerticalAlignment.Top,
-            Child = new TextBlock {
-              Text = Strings.RenamePresetError,
-              FontSize = 13,
-              Foreground = TryFindResource("TextPrimaryBrush") as Brush,
-              TextWrapping = TextWrapping.Wrap
-            }
-          };
-          var errContent = new Grid();
-          errContent.Children.Add(errCard);
-          Grid.SetRow(errContent, 1);
-          errRoot.Children.Add(errContent);
-
-          var okBtn = new Button {
-            Content = Strings.ButtonOK, MinWidth = 80, Height = 30,
-            Padding = new Thickness(16, 4, 16, 4),
-            HorizontalAlignment = HorizontalAlignment.Right
-          };
-          okBtn.Click += (s2, a2) => errDialog.DialogResult = true;
-          errRoot.Children.Add(new Border {
-            BorderBrush = TryFindResource("BorderSubtleBrush") as Brush,
-            BorderThickness = new Thickness(0, 1, 0, 0),
-            Padding = new Thickness(16, 8, 16, 8),
-            Child = okBtn
-          });
-          Grid.SetRow(errRoot.Children[errRoot.Children.Count - 1], 2);
-
-          errDialog.Content = errRoot;
-          errDialog.ShowDialog();
+          // ponytail: 原实现内联手搓一整个 FluentWindow(标题 Border/卡片/按钮栏),与 DialogHelper
+          // 完全重复且没有 TitleBar。Warn 的 _Owner() 取当前活动窗口,正好是这个重命名对话框。
+          DialogHelper.Warn(Strings.RenamePresetError, Strings.Error);
           return;
         }
         if (!ConfigService.SetCustomPresetName(preset, newName))
           DialogHelper.Warn(Strings.PresetRenameSaveFail, Strings.Hint);
         LoadPresetState();
       }
-    }
-
-    void PresetSave_Click(object sender, RoutedEventArgs e) {
-      var item = PresetCombo.SelectedItem as ComboBoxItem;
-      string preset = item?.Tag as string;
-      if (string.IsNullOrEmpty(preset) || PresetManager.IsBuiltIn(preset)) return;
-
-      PresetManager.SaveCustomPreset(preset);
-      ConfigService.Save("Preset");
-
-      _loading = true;
-      int idx = PresetCombo.SelectedIndex;
-      PresetCombo.SelectedIndex = idx;
-      _loading = false;
     }
 
     bool _dashExpanded = true;
@@ -1515,9 +1550,7 @@ try { kb = GetKeyboardTypeName((NbKeyboardLightingType)(kbRaw = (int)GetKeyboard
       if (_gpuAppWindow != null) { _gpuAppWindow.Activate(); return; }
       // ponytail: FluentWindow + Mica 风格,对齐项目 DialogHelper/HelpWindow 约定。
       // 弹窗内 ListBox + 右键菜单,保留定位/结束/首选项全部交互。
-      var bgDeep = (Brush)FindResource("BgDeepBrush");
       var borderSubtle = (Brush)FindResource("BorderSubtleBrush");
-      var accentOmen = (Brush)FindResource("AccentOmenBrush");
 
       var cardBrush = (Brush)FindResource("CardBackgroundFillColorDefaultBrush");
 
@@ -1548,22 +1581,10 @@ try { kb = GetKeyboardTypeName((NbKeyboardLightingType)(kbRaw = (int)GetKeyboard
       outer.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 标题栏
       outer.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) }); // 内容卡片
       outer.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });  // 按钮栏
-      var titleBar = new Border {
-        Background = bgDeep, BorderBrush = borderSubtle,
-        BorderThickness = new Thickness(0, 0, 0, 1),
-        Padding = new Thickness(16, 12, 16, 12)
-      };
-      var titlePanel = new StackPanel { Orientation = Orientation.Horizontal };
-      titlePanel.Children.Add(new Wpf.Ui.Controls.SymbolIcon {
-        Symbol = Wpf.Ui.Controls.SymbolRegular.DeviceEq24, FontSize = 18,
-        Foreground = accentOmen, Margin = new Thickness(0, 0, 8, 0),
-        VerticalAlignment = VerticalAlignment.Center
-      });
-      titlePanel.Children.Add(new TextBlock {
-        Text = Strings.GpuAppsMenu, FontSize = 14, FontWeight = FontWeights.SemiBold,
-        VerticalAlignment = VerticalAlignment.Center
-      });
-      titleBar.Child = titlePanel;
+      // ponytail: 原来手搓标题 Border —— ExtendsContentIntoTitleBar 已抹掉原生栏,那个 Border
+      // 既不能拖也没有系统关闭键。收口到 DialogHelper.MakeTitleBar。
+      var titleBar = OmenSuperHub.Utils.DialogHelper.MakeTitleBar(
+        Strings.GpuAppsMenu, Wpf.Ui.Controls.SymbolRegular.DeviceEq24);
       Grid.SetRow(titleBar, 0); outer.Children.Add(titleBar);
 
       // ── 内容卡片 (对齐 DashboardPage 错误弹窗: CardBg + CornerRadius) ──

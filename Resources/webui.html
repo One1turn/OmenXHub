@@ -1,0 +1,849 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<!-- 手机状态栏跟随主题: 两档取值与 --winui-bg 的浅/深色令牌一致(#faf9f8 / #1f1f1f) -->
+<meta name="theme-color" content="#faf9f8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1f1f1f" media="(prefers-color-scheme: dark)">
+<title>Omen X Hub</title>
+<style>
+/* ============================================================================
+ * Fluent 2 / WinUI 3 设计令牌
+ * 取值移植自参考项目 frontend/src/styles/winui-tokens.css（Fluent 2 web 档），
+ * 命名保留 --winui-* 以便与参考项目对照。深色档按 WinUI 3 Dark 字典补齐，
+ * 由 prefers-color-scheme 自动切换（两套令牌，页面结构零改动）。
+ * ========================================================================== */
+:root{
+  color-scheme: light;
+  /* 强调色 = 主程序 OMEN 黑白品牌(Themes/Colors.Light.xaml AccentOmen=#000, AccentOmenLight=#333),
+     与客户端卡片/焦点/开关/滑杆同色同源 */
+  --winui-accent:#000000; --winui-accent-hover:#333333; --winui-accent-pressed:#333333;
+  --winui-on-accent:#ffffff;
+  /* 背景层次 */
+  --winui-bg:#faf9f8; --winui-card:#ffffff; --winui-card-2:#f3f2f1;
+  /* 描边与分隔 */
+  --winui-stroke:#e0dedc; --winui-stroke-strong:#d1d1d1; --winui-divider:rgba(0,0,0,.0588);
+  /* 文本 */
+  --winui-text:#242424; --winui-text-2:#616161; --winui-text-3:rgba(0,0,0,.5647);
+  --winui-text-disabled:#a19f9d;
+  /* 控件填充 */
+  --winui-fill:rgba(255,255,255,.702); --winui-fill-hover:rgba(249,249,249,.502);
+  --winui-subtle:rgba(0,0,0,.0353);
+  /* 表单控件/原生下拉弹层的实色底:必须实色,半透明白会让 option 白字压白底 */
+  --winui-field-bg:#ffffff; --winui-field-bg-hover:#f3f2f1; --winui-popup-bg:#ffffff;
+  /* 语义色 */
+  --winui-success:#0f7b0f; --winui-success-bg:#dff6dd;
+  --winui-caution:#9d5d00; --winui-caution-bg:#fff4ce;
+  --winui-critical:#c42b1c; --winui-critical-bg:#fde7e9;
+  --winui-selection:#eff6fc;
+  /* 阴影（Fluent 2 shadow 档位） */
+  --winui-shadow-card:0 1px 2px rgba(0,0,0,.08),0 0 2px rgba(0,0,0,.06);
+  --winui-shadow-flyout:0 8px 16px rgba(0,0,0,.14),0 0 2px rgba(0,0,0,.12);
+  /* 度量 */
+  --winui-radius:4px; --winui-radius-overlay:8px; --winui-radius-chip:999px;
+  --winui-control-h:32px;
+  --winui-font:'Segoe UI Variable Text','Segoe UI','Microsoft YaHei','PingFang SC',system-ui,-apple-system,sans-serif;
+  --winui-font-num:'Segoe UI Variable Text','Segoe UI',Consolas,monospace;
+  --winui-dur:180ms; --winui-ease:cubic-bezier(.33,0,.67,1);
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    color-scheme: dark;
+    /* 主程序 Colors.Dark.xaml: AccentOmen=#FFF, AccentOmenLight=#E0E0E0 */
+    --winui-accent:#ffffff; --winui-accent-hover:#e0e0e0; --winui-accent-pressed:#e0e0e0;
+    --winui-on-accent:#000000;
+    --winui-bg:#1f1f1f; --winui-card:#2b2b2b; --winui-card-2:#272727;
+    --winui-stroke:rgba(255,255,255,.0698); --winui-stroke-strong:rgba(255,255,255,.093);
+    --winui-divider:rgba(255,255,255,.0698);
+    --winui-text:#ffffff; --winui-text-2:#c5c5c5; --winui-text-3:rgba(255,255,255,.5442);
+    --winui-text-disabled:rgba(255,255,255,.3628);
+    --winui-fill:rgba(255,255,255,.0605); --winui-fill-hover:rgba(255,255,255,.0837);
+    --winui-subtle:rgba(255,255,255,.05);
+    --winui-field-bg:#2b2b2b; --winui-field-bg-hover:#333333; --winui-popup-bg:#2b2b2b;
+    --winui-success:#6ccb5f; --winui-success-bg:#393d1b;
+    --winui-caution:#fce100; --winui-caution-bg:#433519;
+    --winui-critical:#ff99a4; --winui-critical-bg:#442726;
+    --winui-selection:rgba(255,255,255,.1);
+    --winui-shadow-card:0 1px 2px rgba(0,0,0,.28),0 0 2px rgba(0,0,0,.24);
+    --winui-shadow-flyout:0 8px 16px rgba(0,0,0,.4),0 0 2px rgba(0,0,0,.3);
+  }
+}
+
+/* ============================================================================
+ * 基础
+ * ========================================================================== */
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0;
+  background:var(--winui-bg);
+  color:var(--winui-text);
+  font-family:var(--winui-font);
+  font-size:14px; line-height:20px;
+  -webkit-font-smoothing:antialiased;
+  transition:background-color var(--winui-dur) var(--winui-ease);
+}
+::selection{background:var(--winui-accent);color:var(--winui-on-accent)}
+
+/* ---- Fluent System Icons 子集字体: 码位与主程序 Wpf.Ui SymbolRegular 同源
+     F35C=DeveloperBoard24 F35D=DeviceEq24 F60F=Power24 F191=ArrowSync24
+     F4C8=Gauge24 F1BC=Battery024 F4A4=Info24 E9F3=Ram20(运存/显存) F202=Broom24(清理)
+     F2DE=Clock24(频率) F6AA=Settings24(显示设置) F35A=Desktop24(显示器)
+     E685=FullScreenMaximize24 / E688=FullScreenMinimize24(全屏切换))。
+     重建: fontTools.subset <从 Wpf.Ui.dll 提取的 FluentSystemIcons-Regular.ttf>
+     --unicodes=U+F35C,U+F35D,U+F60F,U+F191,U+F4C8,U+F1BC,U+F4A4,U+E9F3,U+F202,U+F2DE,U+F6AA,U+F35A,U+E685,U+E688
+     --layout-features='' --flavor=woff ---- */
+@font-face{font-family:'fsi';src:url(data:font/woff;base64,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) format('woff');font-display:block}
+.fic{font-family:'fsi';font-style:normal;font-weight:400;line-height:1;display:inline-block}
+.metric .lbl .fic{font-size:14px;opacity:.75}
+.panel-head .fic{font-size:16px;flex:none;color:var(--winui-accent)}
+.banner .fic{font-size:16px;flex:none;margin-top:1px;color:var(--winui-critical)}
+.wrap{max-width:1000px;margin:0 auto;padding:0 16px 32px}
+
+/* ---- 吸顶标题栏（半透明 + 模糊，参考 .winui-mica-layer） ---- */
+.title-bar{
+  position:sticky;top:0;z-index:10;
+  display:flex;align-items:center;justify-content:space-between;gap:16px;
+  height:48px;padding:0 16px;margin-bottom:20px;
+  /* 回退:老浏览器不支持 color-mix 时用实色底,避免标题栏透明 */
+  background:var(--winui-bg);
+  background:color-mix(in srgb,var(--winui-bg) 78%,transparent);
+  backdrop-filter:saturate(1.5) blur(30px);
+  -webkit-backdrop-filter:saturate(1.5) blur(30px);
+  border-bottom:1px solid var(--winui-stroke);
+}
+.title-group{display:flex;align-items:center;gap:8px;min-width:0}
+.title-actions{display:flex;align-items:center;gap:10px;flex:none;position:relative}
+.app-mark{width:20px;height:20px;flex:none;display:block}
+h1{margin:0;font-size:18px;line-height:24px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+/* ---- 连接状态胶囊（WinUI 状态胶囊：全圆 + 浅底深字） ---- */
+.pill{
+  display:inline-flex;align-items:center;gap:6px;flex:none;
+  padding:4px 12px;border-radius:var(--winui-radius-chip);
+  font-size:12px;line-height:16px;font-weight:600;
+  background:var(--winui-card-2);color:var(--winui-text-2);
+  transition:background-color var(--winui-dur) var(--winui-ease),color var(--winui-dur) var(--winui-ease);
+}
+.pill .dot{width:7px;height:7px;border-radius:50%;background:var(--winui-text-3);flex:none}
+.pill.ok{background:var(--winui-success-bg);color:var(--winui-success)}
+.pill.ok .dot{background:var(--winui-success)}
+.pill.bad{background:var(--winui-critical-bg);color:var(--winui-critical)}
+.pill.bad .dot{background:var(--winui-critical)}
+
+/* ---- 错误提示条（WinUI InfoBar：浅底 + 左侧色条） ---- */
+.banner{
+  display:none;align-items:flex-start;gap:10px;
+  margin:0 0 16px;padding:12px 14px;
+  border-radius:var(--winui-radius);
+  background:var(--winui-critical-bg);color:var(--winui-text);
+  border-left:3px solid var(--winui-critical);
+  font-size:13px;line-height:18px;
+}
+.banner.show{display:flex}
+.banner svg{width:16px;height:16px;flex:none;margin-top:1px;color:var(--winui-critical)}
+
+/* ============================================================================
+ * 指标卡（实色表面 + 1px 暖描边 + 极轻双层阴影）
+ * ========================================================================== */
+.grid{
+  display:grid;gap:12px;margin-bottom:20px;
+  grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+}
+.card{
+  background:var(--winui-card);
+  border:1px solid var(--winui-stroke);
+  border-radius:var(--winui-radius-overlay);
+  box-shadow:var(--winui-shadow-card);
+  padding:14px 16px;
+  transition:background-color var(--winui-dur) var(--winui-ease),border-color var(--winui-dur) var(--winui-ease);
+}
+.metric .lbl{
+  display:flex;align-items:center;gap:6px;
+  font-size:12px;line-height:16px;color:var(--winui-text-2);margin-bottom:8px;
+}
+.metric .lbl svg{width:14px;height:14px;flex:none;opacity:.75}
+.metric .val{
+  font-family:var(--winui-font-num);
+  font-variant-numeric:tabular-nums;
+  font-size:26px;line-height:30px;font-weight:600;
+  letter-spacing:-.01em;
+}
+.metric .val .unit{font-size:14px;font-weight:400;color:var(--winui-text-2);margin-left:2px}
+.metric .val .dim{color:var(--winui-text-disabled)}
+.metric .sub{margin-top:4px;font-size:12px;line-height:16px;color:var(--winui-text-3);font-variant-numeric:tabular-nums}
+
+/* 负载细条 */
+.meter{height:3px;margin-top:10px;border-radius:2px;background:var(--winui-card-2);overflow:hidden}
+.meter i{display:block;height:100%;width:0;border-radius:2px;background:var(--winui-accent);transition:width 400ms var(--winui-ease),background-color var(--winui-dur) var(--winui-ease)}
+.meter i.warn{background:var(--winui-caution)}
+.meter i.hot{background:var(--winui-critical)}
+
+/* ============================================================================
+ * 控件卡
+ * ========================================================================== */
+.panel{
+  background:var(--winui-card);
+  border:1px solid var(--winui-stroke);
+  border-radius:var(--winui-radius-overlay);
+  box-shadow:var(--winui-shadow-card);
+  padding:4px 16px;margin-bottom:16px;
+}
+.panel-head{
+  display:flex;align-items:center;gap:8px;
+  padding:12px 0 10px;border-bottom:1px solid var(--winui-divider);
+  font-size:14px;font-weight:600;
+}
+.panel-head svg{width:16px;height:16px;flex:none;color:var(--winui-accent)}
+.row{
+  display:flex;align-items:center;gap:12px;
+  padding:12px 0;border-bottom:1px solid var(--winui-divider);
+}
+.row:last-child{border-bottom:none}
+.row label{
+  width:88px;flex:none;font-size:13px;line-height:18px;color:var(--winui-text-2);
+}
+.row .grow{flex:1;min-width:0;display:flex;align-items:center;gap:12px}
+
+/* ---- 按钮（平面：填充 + 可见描边；强调按钮 hover/pressed 变深） ---- */
+button{
+  font-family:inherit;font-size:14px;font-weight:400;
+  height:var(--winui-control-h);min-width:72px;padding:0 14px;
+  border-radius:var(--winui-radius);
+  border:1px solid var(--winui-stroke-strong);
+  background:var(--winui-fill);color:var(--winui-text);
+  cursor:pointer;
+  transition:background-color var(--winui-dur) var(--winui-ease),
+             border-color var(--winui-dur) var(--winui-ease),
+             color var(--winui-dur) var(--winui-ease);
+}
+button:hover{background:var(--winui-fill-hover)}
+button:active{background:var(--winui-card-2)}
+button.primary{background:var(--winui-accent);border-color:var(--winui-accent);color:var(--winui-on-accent)}
+button.primary:hover{background:var(--winui-accent-hover);border-color:var(--winui-accent-hover)}
+button.primary:active{background:var(--winui-accent-pressed);border-color:var(--winui-accent-pressed)}
+button:disabled{background:var(--winui-card-2);color:var(--winui-text-disabled);border-color:var(--winui-stroke);cursor:default}
+/* 面板行内按钮(一键清理/关闭屏幕)的图标对齐 */
+.panel .row .fic{font-size:14px;vertical-align:-2px;margin-right:5px}
+
+/* ---- 显示设置: 齿轮 + 面板(仅本机浏览器偏好, 存 localStorage) ---- */
+.gear{
+  width:32px;height:32px;min-width:0;padding:0;flex:none;
+  font-family:'fsi';font-size:16px;line-height:1;
+  color:var(--winui-text-2);
+}
+.gear:hover{color:var(--winui-text)}
+.gear[aria-expanded=true]{background:var(--winui-accent);border-color:var(--winui-accent);color:var(--winui-on-accent)}
+.cfg{
+  position:absolute;top:40px;right:0;z-index:20;
+  min-width:200px;padding:6px 0;
+  background:var(--winui-card);border:1px solid var(--winui-stroke);
+  border-radius:var(--winui-radius-overlay);box-shadow:var(--winui-shadow-flyout);
+}
+.cfg[hidden]{display:none}
+.cfg-head{padding:8px 14px;font-size:12px;color:var(--winui-text-2);border-bottom:1px solid var(--winui-divider)}
+.cfg label{
+  display:flex;align-items:center;gap:10px;width:auto;
+  padding:8px 14px;font-size:13px;line-height:18px;cursor:pointer;
+}
+.cfg label:hover{background:var(--winui-subtle)}
+.cfg input[type=checkbox]{
+  width:16px;height:16px;flex:none;margin:0;cursor:pointer;
+  accent-color:var(--winui-accent);
+}
+.card.metric[hidden]{display:none}
+
+/* ---- 全屏(手机/平板横屏当监控): html.fs 由 JS 挂上,真实全屏与伪全屏共用同一套 ---- */
+html.fs .title-bar{display:none}
+/* 全屏=纯监控视图: 性能预设/风扇配置/系统 三个设置面板全部收走, 只留指标卡 */
+html.fs .panel{display:none}
+html.fs .wrap{padding:10px 10px 14px;max-width:none}
+/* 加密网格, 让全部监控卡在一屏内排满 */
+html.fs .grid{gap:8px;grid-template-columns:repeat(auto-fit,minmax(128px,1fr))}
+html.fs .card.metric{padding:10px 12px}
+html.fs .metric .lbl{margin-bottom:4px}
+html.fs .metric .val{font-size:22px;line-height:26px}
+/* 底部「数据每 2 秒刷新 · 最后更新 …」在全屏监控视图里也收掉 */
+html.fs .foot{display:none}
+.fs-exit{
+  position:fixed;top:10px;right:10px;z-index:60;
+  width:36px;height:36px;min-width:0;padding:0;border-radius:18px;
+  background:var(--winui-accent);border-color:var(--winui-accent);
+  color:var(--winui-on-accent);
+  box-shadow:var(--winui-shadow-flyout);
+}
+.fs-exit[hidden]{display:none}
+button:focus-visible,
+select:focus-visible,
+input[type=range]:focus-visible,
+.switch:focus-visible{
+  outline:2px solid var(--winui-text);
+  outline-offset:1px;
+}
+
+/* ---- 下拉（WinUI ComboBox：静止即 1px 可见描边，聚焦底边 2px 强调色） ---- */
+select{
+  font-family:inherit;font-size:14px;
+  height:var(--winui-control-h);min-width:150px;padding:0 10px;
+  border-radius:var(--winui-radius);
+  border:1px solid var(--winui-stroke-strong);
+  /* ponytail: 必须实色底 —— 半透明白 + 白字会让原生下拉弹层(浏览器用 select 底色画)
+     出现白压白、选项全看不见。option 也显式给实色底 + 对比文字色兜底。 */
+  background:var(--winui-field-bg);color:var(--winui-text);
+  cursor:pointer;
+  transition:background-color var(--winui-dur) var(--winui-ease),border-color var(--winui-dur) var(--winui-ease);
+}
+select:hover{background:var(--winui-field-bg-hover)}
+select:focus{outline:none;border-color:var(--winui-accent)}
+option{background:var(--winui-popup-bg);color:var(--winui-text)}
+
+/* ---- 滑块 ---- */
+input[type=range]{
+  -webkit-appearance:none;appearance:none;flex:1;min-width:80px;
+  height:4px;border-radius:2px;background:var(--winui-card-2);outline:none;cursor:pointer;
+}
+input[type=range]::-webkit-slider-thumb{
+  -webkit-appearance:none;appearance:none;
+  width:20px;height:20px;border-radius:50%;
+  background:var(--winui-accent);
+  border:3px solid var(--winui-card);
+  box-shadow:0 0 0 1px var(--winui-stroke-strong);
+  transition:transform var(--winui-dur) var(--winui-ease);
+}
+input[type=range]::-webkit-slider-thumb:hover{transform:scale(1.1)}
+input[type=range]::-moz-range-thumb{
+  width:14px;height:14px;border-radius:50%;border:3px solid var(--winui-card);
+  background:var(--winui-accent);box-shadow:0 0 0 1px var(--winui-stroke-strong);
+}
+input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:var(--winui-card-2)}
+.num{
+  width:52px;flex:none;text-align:right;
+  font-family:var(--winui-font-num);font-variant-numeric:tabular-nums;
+  font-size:13px;color:var(--winui-text-2);
+}
+
+/* ---- 开关（WinUI ToggleSwitch：40×20 轨道，选中强调色） ---- */
+.switch{
+  position:relative;flex:none;width:40px;height:20px;padding:0;
+  min-width:0;border-radius:10px;border:1px solid var(--winui-stroke-strong);
+  background:var(--winui-card-2);cursor:pointer;
+  transition:background-color var(--winui-dur) var(--winui-ease),border-color var(--winui-dur) var(--winui-ease);
+}
+.switch::after{
+  content:'';position:absolute;top:50%;left:3px;transform:translateY(-50%);
+  width:12px;height:12px;border-radius:50%;
+  background:var(--winui-text);opacity:.9;
+  transition:left var(--winui-dur) var(--winui-ease),background-color var(--winui-dur) var(--winui-ease);
+}
+.switch[aria-checked=true]{background:var(--winui-accent);border-color:var(--winui-accent)}
+.switch[aria-checked=true]::after{left:23px;background:var(--winui-on-accent)}
+
+.foot{
+  margin:24px 0 0;text-align:center;
+  font-size:12px;line-height:16px;color:var(--winui-text-3);
+}
+.foot a{color:var(--winui-accent);text-decoration:none}
+.foot a:hover{text-decoration:underline}
+
+@media (max-width:520px){
+  .row{flex-wrap:wrap;gap:8px}
+  .row label{width:auto}
+  .row .grow{width:100%}
+  button,select{height:40px}
+  .metric .val{font-size:22px;line-height:26px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{transition-duration:.01ms !important;animation-duration:.01ms !important}
+}
+</style>
+</head>
+<body>
+
+<div class="title-bar">
+  <div class="title-group">
+    <!-- ponytail: 品牌标记用应用图标本体(Resources/fan.ico 的 128px 帧, bbox 裁紧)内嵌为 data URI;
+         不手绘 SVG —— 图标是橙/洋红/红的二维渐变, 矢量重绘必失真, 20px 显示为下采样不失真。 -->
+    <img class="app-mark" src="data:image/png;base64,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" alt="" aria-hidden="true">
+    <h1>Omen X Hub</h1>
+  </div>
+  <div class="title-actions">
+    <span class="pill" id="status"><span class="dot"></span><span id="statusText">连接中…</span></span>
+    <button class="gear" id="fsBtn" aria-label="全屏" aria-pressed="false"><span class="fic" id="fsIcon">&#xE685;</span></button>
+    <button class="gear" id="cfgBtn" aria-expanded="false" aria-controls="cfgPanel" aria-label="显示设置">&#xF6AA;</button>
+    <div class="cfg" id="cfgPanel" hidden>
+      <div class="cfg-head">显示项目</div>
+      <div id="cfgList"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 浮动退出钮: 仅"伪全屏"(iOS 无 Fullscreen API)时显示 —— 真全屏用 ESC/系统返回手势退出, 不需要它 -->
+<button class="fs-exit" id="fsExit" aria-label="退出全屏" hidden><span class="fic">&#xE688;</span></button>
+
+<div class="wrap">
+  <div class="banner" id="banner" role="alert">
+    <span class="fic" aria-hidden="true">&#xF4A4;</span>
+    <span id="bannerText"></span>
+  </div>
+
+  <!-- ponytail: 每卡 data-k 是显隐设置的持久化键(localStorage),不要与元素 id 混用 -->
+  <div class="grid">
+    <div class="card metric" data-k="cpuTemp">
+      <div class="lbl"><span class="fic" aria-hidden="true">&#xF35C;</span>CPU 温度</div>
+      <div class="val" id="cpuTemp">—</div>
+      <div class="meter"><i id="cpuTempBar"></i></div>
+    </div>
+    <div class="card metric" data-k="cpuPower">
+      <div class="lbl"><span class="fic" aria-hidden="true">&#xF60F;</span>CPU 功耗</div>
+      <div class="val" id="cpuPower">—</div>
+    </div>
+    <div class="card metric" data-k="cpuFreq">
+      <div class="lbl"><span class="fic" aria-hidden="true">&#xF2DE;</span>CPU 频率</div>
+      <div class="val" id="cpuFreq">—</div>
+    </div>
+    <div class="card metric" data-k="cpuLoad">
+      <div class="lbl"><span class="fic" aria-hidden="true">&#xF35C;</span>CPU 负载</div>
+      <div class="val" id="cpuLoad">—</div>
+      <div class="meter"><i id="cpuLoadBar"></i></div>
+    </div>
+    <div class="card metric" data-k="gpuTemp">
+      <div class="lbl"><span class="fic" aria-hidden="true">&#xF35D;</span>GPU 温度</div>
+      <div class="val" id="gpuTemp">—</div>
+      <div class="meter"><i id="gpuTempBar"></i></div>
+    </div>
+    <div class="card metric" data-k="gpuPower">
+      <div class="lbl"><span class="fic" aria-hidden="true">&#xF60F;</span>GPU 功耗</div>
+      <div class="val" id="gpuPower">—</div>
+    </div>
+    <div class="card metric" data-k="gpuFreq">
+      <div class="lbl"><span class="fic" aria-hidden="true">&#xF2DE;</span>GPU 频率</div>
+      <div class="val" id="gpuFreq">—</div>
+    </div>
+    <div class="card metric" data-k="gpuLoad">
+      <div class="lbl"><span class="fic" aria-hidden="true">&#xF35D;</span>GPU 负载</div>
+      <div class="val" id="gpuLoad">—</div>
+      <div class="meter"><i id="gpuLoadBar"></i></div>
+    </div>
+    <div class="card metric" data-k="vram">
+      <div class="lbl"><span class="fic" aria-hidden="true">&#xE9F3;</span>显存</div>
+      <div class="val" id="vram">—</div>
+      <div class="meter"><i id="vramBar"></i></div>
+    </div>
+    <div class="card metric" data-k="ram">
+      <div class="lbl"><span class="fic" aria-hidden="true">&#xE9F3;</span>运存</div>
+      <div class="val" id="ram">—</div>
+      <div class="meter"><i id="ramBar"></i></div>
+      <div class="sub" id="ramSub">—</div>
+    </div>
+    <div class="card metric" data-k="fan">
+      <div class="lbl"><span class="fic" aria-hidden="true">&#xF191;</span>风扇转速</div>
+      <div class="val" id="fan">—</div>
+      <div class="sub" id="fanRpm">—</div>
+    </div>
+    <div class="card metric" data-k="bat">
+      <div class="lbl"><span class="fic" aria-hidden="true">&#xF1BC;</span>电池</div>
+      <div class="val" id="bat">—</div>
+      <div class="meter"><i id="batBar"></i></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <span class="fic" aria-hidden="true">&#xF4C8;</span>
+      性能预设
+    </div>
+    <div class="row">
+      <label for="mode">当前预设</label>
+      <div class="grow">
+        <select id="mode">
+          <option value="Extreme">极致性能</option>
+          <option value="GpuPriority">GPU 优先</option>
+          <option value="LightUse">轻度使用</option>
+          <option value="Custom1">自定义 1</option>
+          <option value="Custom2">自定义 2</option>
+          <option value="Custom3">自定义 3</option>
+        </select>
+        <button class="primary" id="applyMode">应用</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <span class="fic" aria-hidden="true">&#xF191;</span>
+      风扇配置
+    </div>
+    <!-- ponytail: 只放主程序「风扇配置」五档下拉(用户指定), 选中即切档与 App 行为一致;
+         直写转速/曲线数值/跑满开关均仅本机回环开放。manual 档=保持已存 RPM, 远程不接新转速值。 -->
+    <div class="row">
+      <label for="fanMode">风扇模式</label>
+      <div class="grow">
+        <select id="fanMode">
+          <option value="silent">安静模式</option>
+          <option value="cool">降温模式</option>
+          <option value="balanced">平衡模式</option>
+          <option value="smart">自定义曲线</option>
+          <option value="manual">手动模式</option>
+        </select>
+        <span class="num" id="fanModeState" style="width:auto;flex:1;text-align:left"></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head">
+      <span class="fic" aria-hidden="true">&#xF35A;</span>
+      系统
+    </div>
+    <!-- ponytail: 关屏无损可逆(任何键鼠输入即唤醒), 与主程序 PerfPage「关闭显示器」共用
+         NativeMethods_Display.TurnOffDisplay; 重启/关机仍在 LAN 白名单之外。 -->
+    <div class="row">
+      <label>显示器</label>
+      <div class="grow">
+        <button id="displayOff">关闭屏幕</button>
+        <span class="num" id="displayOffState" style="width:auto;flex:1;text-align:left"></span>
+      </div>
+    </div>
+    <!-- ponytail: 清理内存从「运存」指标卡里挪出来单独立行 —— 卡片内塞按钮会把那张卡撑高,
+         与同排卡片高度不一致; 结果文案也随按钮走(不再占用指标卡副行)。 -->
+    <div class="row">
+      <label>内存</label>
+      <div class="grow">
+        <button id="cleanMem"><span class="fic" aria-hidden="true">&#xF202;</span>一键清理</button>
+        <span class="num" id="memCleanState" style="width:auto;flex:1;text-align:left"></span>
+      </div>
+    </div>
+  </div>
+
+  <p class="foot">数据每 2 秒刷新 · 最后更新 <span id="updated">—</span></p>
+</div>
+
+<script>
+'use strict';
+var TOKEN = new URLSearchParams(location.search).get('token') || '';
+var HDR = { 'Authorization': 'Bearer ' + TOKEN };
+
+function $(id) { return document.getElementById(id); }
+
+function api(path, opts) {
+  opts = opts || {};
+  opts.headers = Object.assign({}, HDR, opts.headers || {});
+  return fetch(path, opts).then(function (r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  });
+}
+
+function setStatus(ok, text) {
+  var el = $('status');
+  el.className = 'pill ' + (ok ? 'ok' : 'bad');
+  $('statusText').textContent = text;
+}
+
+function showError(msg) {
+  $('bannerText').textContent = msg;
+  $('banner').classList.add('show');
+}
+function clearError() { $('banner').classList.remove('show'); }
+
+// 温度 → 颜色档（60°C 起黄、85°C 起红；仅作视觉提示）
+function heat(pct) { return pct >= 85 ? 'hot' : pct >= 60 ? 'warn' : ''; }
+
+function setMeter(id, pct) {
+  var el = $(id);
+  el.style.width = Math.max(0, Math.min(100, pct)) + '%';
+  el.className = heat(pct);
+}
+
+function num(v, digits, unit) {
+  if (v === null || v === undefined || isNaN(v)) return '<span class="dim">—</span>';
+  return v.toFixed(digits) + '<span class="unit">' + unit + '</span>';
+}
+
+function poll() {
+  // ponytail: 单请求 —— /api/hardware/all 已补齐 load/freq/显存/运存,原 /api/cpu/load
+  // 与 /api/gpu/load 两次额外往返取消(轮询从 3 请求降到 1)。
+  api('/api/hardware/all').then(function (d) {
+    $('cpuTemp').innerHTML = num(d.cpu.temp, 0, '°C');
+    setMeter('cpuTempBar', d.cpu.temp);
+    $('cpuPower').innerHTML = num(d.cpu.power, 0, 'W');
+    $('cpuFreq').innerHTML = num(d.cpu.freq, 0, 'MHz');
+    $('cpuLoad').innerHTML = num(d.cpu.load, 0, '%');
+    setMeter('cpuLoadBar', d.cpu.load || 0);
+
+    var gpuOk = d.gpu.valid;
+    $('gpuTemp').innerHTML = gpuOk ? num(d.gpu.temp, 0, '°C') : '<span class="dim">—</span>';
+    setMeter('gpuTempBar', gpuOk ? d.gpu.temp : 0);
+    $('gpuPower').innerHTML = gpuOk ? num(d.gpu.power, 0, 'W') : '<span class="dim">—</span>';
+    $('gpuFreq').innerHTML = gpuOk ? num(d.gpu.freq, 0, 'MHz') : '<span class="dim">—</span>';
+    $('gpuLoad').innerHTML = gpuOk ? num(d.gpu.load, 0, '%') : '<span class="dim">—</span>';
+    setMeter('gpuLoadBar', gpuOk ? (d.gpu.load || 0) : 0);
+
+    // 显存(LHM 单位 MB)
+    var vUsed = d.gpu.memoryUsed || 0, vTotal = d.gpu.memoryTotal || 0;
+    if (vTotal > 0) {
+      $('vram').innerHTML = num(vUsed * 100 / vTotal, 0, '%');
+      setMeter('vramBar', vUsed * 100 / vTotal);
+      $('vram').title = (vUsed / 1024).toFixed(1) + ' / ' + (vTotal / 1024).toFixed(1) + ' GB';
+    } else {
+      $('vram').innerHTML = '<span class="dim">—</span>';
+      setMeter('vramBar', 0);
+      $('vram').title = '显存数据不可用';
+    }
+
+    // 运存
+    var m = d.mem || {};
+    $('ram').innerHTML = num(m.percent, 0, '%');
+    setMeter('ramBar', m.percent || 0);
+    $('ramSub').textContent = (m.usedMB / 1024).toFixed(1) + ' / ' + (m.totalMB / 1024).toFixed(1) + ' GB';
+
+    var f = d.fan.percent || [0, 0];
+    $('fan').innerHTML = f[0] + '<span class="unit">%</span>';
+    $('fanRpm').textContent = (d.fan.rpm ? d.fan.rpm[0] : 0) + ' RPM';
+
+    var bat = d.battery || {};
+    $('bat').innerHTML = num(bat.percent, 0, '%');
+    setMeter('batBar', bat.percent || 0);
+    $('bat').title = bat.status || '';
+
+    // 预设回填（用户正在操作下拉时不覆盖，避免抢焦点）
+    var sel = $('mode');
+    if (document.activeElement !== sel && d.preset) {
+      for (var i = 0; i < sel.options.length; i++) {
+        if (sel.options[i].value.toLowerCase() === String(d.preset).toLowerCase()) { sel.value = sel.options[i].value; break; }
+      }
+    }
+
+    $('updated').textContent = new Date().toLocaleTimeString();
+    setStatus(true, '已连接');
+    clearError();
+  }).catch(function (e) {
+    setStatus(false, '连接失败');
+    showError('无法读取数据：' + e.message + '。请确认已开启 HTTP API 服务，且链接中的令牌正确。');
+  });
+}
+
+// ---- 控件绑定 ----
+
+function post(path, body) {
+  return api(path, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body)
+  });
+}
+
+$('applyMode').addEventListener('click', function () {
+  var btn = this; btn.disabled = true;
+  post('/api/mode', { mode: $('mode').value })
+    .then(function () { setStatus(true, '已连接'); clearError(); })
+    .catch(function (e) { showError('切换预设失败：' + e.message); })
+    .then(function () { btn.disabled = false; });
+});
+
+// ---- 风扇模式(五档下拉, 选中即应用同 App)----
+function loadFanMode() {
+  api('/api/fan/mode').then(function (d) {
+    var sel = $('fanMode');
+    if (document.activeElement === sel) return;
+    for (var i = 0; i < sel.options.length; i++) {
+      if (sel.options[i].value === d.mode) { sel.value = d.mode; return; }
+    }
+  }).catch(function () { /* 读失败不影响手动切换 */ });
+}
+$('fanMode').addEventListener('change', function () {
+  var sel = this; sel.disabled = true;
+  post('/api/fan/mode', { mode: sel.value })
+    .then(function () { clearError(); $('fanModeState').textContent = '已切换为' + sel.options[sel.selectedIndex].text; loadFanMode(); })
+    .catch(function (e) { showError('切换风扇模式失败：' + e.message); })
+    .then(function () { sel.disabled = false; });
+});
+
+// ---- 一键清理内存(POST /api/memory/clean,与主程序仪表盘同一实现) ----
+$('cleanMem').addEventListener('click', function () {
+  var btn = this, old = btn.innerHTML;
+  btn.disabled = true; btn.textContent = '清理中…';
+  post('/api/memory/clean', {}).then(function (r) {
+    var mb = (r && typeof r.freedMB === 'number') ? r.freedMB : 0;
+    $('memCleanState').textContent = mb >= 1 ? ('已释放 ' + mb.toFixed(0) + ' MB') : '无需清理';
+  }).catch(function (e) {
+    $('memCleanState').textContent = '清理失败：' + e.message;
+  }).then(function () {
+    btn.disabled = false; btn.innerHTML = old;
+    setTimeout(function () { $('memCleanState').textContent = ''; }, 3000);
+  });
+});
+
+// ---- 关闭显示器(POST /api/system/display/off, 与主程序 PerfPage 同一实现) ----
+$('displayOff').addEventListener('click', function () {
+  var btn = this; btn.disabled = true;
+  $('displayOffState').textContent = '';
+  post('/api/system/display/off', {}).then(function () {
+    clearError();
+    $('displayOffState').textContent = '已发送';
+    setTimeout(function () { $('displayOffState').textContent = ''; }, 3000);
+  }).catch(function (e) {
+    showError('关闭显示器失败：' + e.message);
+  }).then(function () { btn.disabled = false; });
+});
+
+// ---- 显示设置: 指标卡显隐(localStorage, 每浏览器/设备独立, 不影响服务端) ----
+var VIS_KEY = 'oxh.metrics';
+var metricCards = [].slice.call(document.querySelectorAll('.card.metric[data-k]'));
+
+function readVis() {
+  try { var raw = localStorage.getItem(VIS_KEY); return raw ? JSON.parse(raw) : null; }
+  catch (e) { return null; }
+}
+function applyVis(map) {
+  metricCards.forEach(function (c) {
+    c.hidden = !!(map && map[c.getAttribute('data-k')] === false);
+  });
+}
+function buildCfg() {
+  var vis = readVis() || {}, host = $('cfgList');
+  host.innerHTML = '';
+  metricCards.forEach(function (c) {
+    var k = c.getAttribute('data-k');
+    var lbl = c.querySelector('.lbl');
+    // lbl 首个子节点是图标(private use 区码位),取最后的文本节点才是标题
+    var text = (lbl && lbl.lastChild && lbl.lastChild.nodeType === 3)
+      ? String(lbl.lastChild.textContent).trim() : k;
+    var line = document.createElement('label');
+    var cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.checked = !(vis[k] === false);
+    cb.addEventListener('change', function () {
+      var cur = readVis() || {};
+      cur[k] = cb.checked;
+      try { localStorage.setItem(VIS_KEY, JSON.stringify(cur)); } catch (e) { }
+      applyVis(cur);
+    });
+    line.appendChild(cb);
+    line.appendChild(document.createTextNode(text));
+    host.appendChild(line);
+  });
+}
+$('cfgBtn').addEventListener('click', function () {
+  var open = $('cfgPanel').hidden;
+  $('cfgPanel').hidden = !open;
+  this.setAttribute('aria-expanded', String(open));
+  if (open) buildCfg();
+});
+document.addEventListener('click', function (e) {
+  var p = $('cfgPanel');
+  if (p.hidden) return;
+  if (p.contains(e.target) || $('cfgBtn').contains(e.target)) return;
+  p.hidden = true;
+  $('cfgBtn').setAttribute('aria-expanded', 'false');
+});
+applyVis(readVis());
+
+// ---- 全屏(手机/平板横屏当监控): 优先真 Fullscreen API; iOS Safari 没有该 API(或对非 video
+//      元素直接拒绝)→ 退化为伪全屏(CSS 层: 藏标题栏+设置面板, 只留监控卡). 两种形态共用
+//      html.fs 这套样式, 差别只在是否真的全屏. ----
+var fsBtn = $('fsBtn'), fsIcon = $('fsIcon'), fsExit = $('fsExit');
+var fsPseudoMode = false;   // true = 走 CSS 伪全屏(iOS 无 API), 此时没有系统退出口
+function fsNative() { return document.fullscreenElement || document.webkitFullscreenElement || null; }
+function fsPseudo() { return document.documentElement.classList.contains('fs'); }
+
+// ---- 屏幕常亮: 全屏当监控时别让手机息屏. 不支持 Wake Lock 的浏览器(iOS Safari)静默跳过 ----
+var wakeLock = null, wakeLockPending = false;
+function wakeLockSync(on) {
+  var wl = navigator.wakeLock;
+  if (!wl || !wl.request) return;
+  if (!on) {
+    var lock = wakeLock;
+    wakeLock = null;
+    if (!lock) return;
+    // release() 返回 Promise 且可能 reject(页面已隐藏时), 双保险吞掉
+    try {
+      var r = lock.release();
+      if (r && r.then) r.then(null, function () { });
+    } catch (e) { }
+    return;
+  }
+  if (wakeLock || wakeLockPending) return;
+  wakeLockPending = true;
+  try {
+    var p = wl.request('screen');
+    if (!p || !p.then) { wakeLockPending = false; return; }
+    p.then(function (lock) {
+      wakeLockPending = false;
+      // 申请期间已退出全屏: 立刻还回去, 否则屏幕会一直亮着
+      if (!fsNative() && !fsPseudo()) {
+        try {
+          var q = lock.release();
+          if (q && q.then) q.then(null, function () { });
+        } catch (e) { }
+        return;
+      }
+      wakeLock = lock;
+      // 页面隐藏/系统省电会自行释放: 清掉引用, 回前台才能重新申请
+      if (lock.addEventListener) lock.addEventListener('release', function () {
+        if (wakeLock === lock) wakeLock = null;
+      });
+    }, function () { wakeLockPending = false; });   // 被拒(如非全屏) → 静默, 不打扰监控
+  } catch (e) { wakeLockPending = false; }
+}
+
+function setFsUi(on) {
+  document.documentElement.classList.toggle('fs', on);
+  fsIcon.innerHTML = on ? '&#xE688;' : '&#xE685;';
+  fsBtn.setAttribute('aria-pressed', String(on));
+  fsBtn.setAttribute('aria-label', on ? '退出全屏' : '全屏');
+  // 浮动退出钮只在伪全屏出现: 真全屏有 ESC / 系统返回手势可退, 再摆一个按钮是重复;
+  // 伪全屏(iOS 无 Fullscreen API)没有任何系统退出口, 必须留这一个。
+  fsExit.hidden = !(on && fsPseudoMode);
+  // 用入参 on 而不是 fsNative(): exitFullscreen 是异步的, 调用后它仍非空, 会漏掉释放
+  wakeLockSync(on);
+}
+function exitFs() {
+  var ex = document.exitFullscreen || document.webkitExitFullscreen;
+  if (ex) { try { ex.call(document); } catch (e) { } }
+  fsPseudoMode = false;
+  setFsUi(false);
+}
+function toggleFs() {
+  if (fsNative()) { exitFs(); return; }
+  if (fsPseudo()) { setFsUi(false); return; }
+  var req = document.documentElement.requestFullscreen || document.documentElement.webkitRequestFullscreen;
+  if (!req) { fsPseudoMode = true; setFsUi(true); return; }   // iOS: 无 API → 伪全屏
+  try {
+    var r = req.call(document.documentElement);
+    if (r && r.then) r.then(function () { fsPseudoMode = false; setFsUi(true); },
+                            function () { fsPseudoMode = true; setFsUi(true); });
+    else { fsPseudoMode = false; setFsUi(true); }
+  } catch (e) { fsPseudoMode = true; setFsUi(true); }
+}
+fsBtn.addEventListener('click', toggleFs);
+fsExit.addEventListener('click', exitFs);
+// 回到前台且仍全屏: 系统在页面隐藏时自动释放过 wake lock, 重新申请
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState !== 'visible') return;
+  if (wakeLock && wakeLock.released) wakeLock = null;
+  if (fsNative() || fsPseudo()) wakeLockSync(true);
+});
+// 监控时按 F 切全屏; 输入控件里按 F 是正常打字, 不抢
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'f' && e.key !== 'F') return;
+  if (e.ctrlKey || e.metaKey || e.altKey || e.repeat) return;
+  var t = e.target, tag = t && t.tagName ? t.tagName.toLowerCase() : '';
+  if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+  toggleFs();
+});
+// 系统手势/ESC 退出原生全屏时同步按钮与样式
+['fullscreenchange', 'webkitfullscreenchange'].forEach(function (ev) {
+  document.addEventListener(ev, function () {
+    if (fsNative()) fsPseudoMode = false;   // 真全屏生效 → 浮动退出钮收起
+    setFsUi(!!fsNative());
+  });
+});
+
+poll();
+setInterval(poll, 2000);
+loadFanMode();
+</script>
+</body>
+</html>

@@ -11,6 +11,21 @@
         ExtendsContentIntoTitleBar="True"
         Background="Transparent">
 
+  <ui:FluentWindow.Resources>
+    <!-- 使用说明 tab 的两级排版:区块标题 + 正文(正文与合并前完全一致) -->
+    <Style x:Key="HelpSectionHead" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="{DynamicResource FontSizeSubheader}"/>
+      <Setter Property="FontWeight" Value="SemiBold"/>
+      <Setter Property="Foreground" Value="{DynamicResource AccentOmenBrush}"/>
+    </Style>
+    <Style x:Key="HelpSectionBody" TargetType="TextBlock">
+      <Setter Property="FontSize" Value="{DynamicResource FontSizeSubtitle}"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+      <Setter Property="LineHeight" Value="22"/>
+      <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
+    </Style>
+  </ui:FluentWindow.Resources>
+
   <Grid>
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
@@ -18,107 +33,73 @@
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
 
-    <!-- ── 顶栏：标题 / 版本 / 动作 ── -->
-    <Border Grid.Row="0" Background="{DynamicResource BgDeepBrush}" Padding="24,20"
-            BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,0,0,1">
-      <Grid>
-        <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="*"/>
-          <ColumnDefinition Width="Auto"/>
-        </Grid.ColumnDefinitions>
-        <StackPanel Grid.Column="0" VerticalAlignment="Center">
-          <TextBlock FontSize="22">
+    <!-- ponytail: 原来这里是一条自绘品牌头(Border),因为 ExtendsContentIntoTitleBar 抹掉了原生标题栏,
+         它既不能拖动窗口也没有系统关闭键。改成真 ui:TitleBar:品牌+版本进 Header(GitHub/检查更新进
+         TrailingContent),原生最小化/最大化/关闭一并回来。Header 必须 IsHitTestVisible=False,
+         否则 TitleBar 判定鼠标压在 Header 内容上就不发 HTCAPTION,拖不动(LLT 同款处理)。 -->
+    <ui:TitleBar Style="{StaticResource OmenDialogTitleBar}" Grid.Row="0"
+                 Title="{x:Static app:Strings.HelpWindowTitleBar}"
+                 ShowMinimize="True" ShowMaximize="True" ShowClose="True">
+      <ui:TitleBar.Header>
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" IsHitTestVisible="False">
+          <TextBlock FontSize="15" VerticalAlignment="Center">
             <Run Text="OMEN" Foreground="{DynamicResource AccentOmenBrush}"/>
             <Run Text="X Hub"/>
           </TextBlock>
-          <TextBlock x:Name="VersionText" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,4,0,0" Text="Version"/>
+          <TextBlock x:Name="VersionText" FontSize="{DynamicResource FontSizeCaption}"
+                     Foreground="{DynamicResource TextSecondaryBrush}"
+                     VerticalAlignment="Center" Margin="10,1,0,0" Text="Version"/>
         </StackPanel>
-        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-          <Button  Content="{x:Static app:Strings.HelpBtnGitHub}" x:Name="BtnGitHub" Click="BtnGitHub_Click" Margin="0,0,8,0" Padding="12,6"/>
-          <Button  Content="{x:Static app:Strings.HelpBtnCheckUpdate}" x:Name="BtnUpdate" Click="BtnUpdate_Click" Padding="12,6"/>
+      </ui:TitleBar.Header>
+      <ui:TitleBar.TrailingContent>
+        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,4,0">
+          <ui:Button Content="{x:Static app:Strings.HelpBtnGitHub}" x:Name="BtnGitHub"
+                     Appearance="Secondary" Height="26" Padding="10,0" Margin="0,0,8,0"
+                     Click="BtnGitHub_Click"/>
+          <ui:Button Content="{x:Static app:Strings.HelpBtnCheckUpdate}" x:Name="BtnUpdate"
+                     Appearance="Secondary" Height="26" Padding="10,0" Click="BtnUpdate_Click"/>
         </StackPanel>
-      </Grid>
-    </Border>
+      </ui:TitleBar.TrailingContent>
+    </ui:TitleBar>
 
-    <TabControl Grid.Row="1">
+    <TabControl Grid.Row="1" Margin="16,4,16,0">
 
       <!-- ── 更新说明 ── -->
       <TabItem>
         <TabItem.Header>
           <StackPanel Orientation="Horizontal">
-            <ui:SymbolIcon Symbol="Info24" FontSize="18" Margin="0,0,6,0"/>
+            <ui:SymbolIcon Symbol="Info24" FontSize="{DynamicResource FontSizeTitle}" Margin="0,0,8,0"/>
             <TextBlock Text="{x:Static app:Strings.HelpTabUpdates}" VerticalAlignment="Center"/>
           </StackPanel>
         </TabItem.Header>
-        <ScrollViewer Padding="24,20">
-          <Grid MaxWidth="720" HorizontalAlignment="Center">
+        <ScrollViewer Padding="0,16,0,16">
+          <Grid MaxWidth="720" HorizontalAlignment="Left">
             <TextBlock x:Name="UpdateNotesText" FontSize="{DynamicResource FontSizeSubtitle}"
                        TextWrapping="Wrap" LineHeight="22"/>
           </Grid>
         </ScrollViewer>
       </TabItem>
 
-      <!-- ── 风扇配置 ── -->
+      <!-- ── 使用说明：原「风扇配置/风扇控制/性能控制/其他」四个同构 tab 合一
+           （内容零改动，仅换布局；四个 TextBlock 名字保留，code-behind 不用动） ── -->
       <TabItem>
         <TabItem.Header>
           <StackPanel Orientation="Horizontal">
-            <ui:SymbolIcon Symbol="WeatherSqualls24" FontSize="18" Margin="0,0,6,0"/>
-            <TextBlock Text="{x:Static app:Strings.HelpTabFanConfig}" VerticalAlignment="Center"/>
+            <ui:SymbolIcon Symbol="List24" FontSize="{DynamicResource FontSizeTitle}" Margin="0,0,8,0"/>
+            <TextBlock Text="{x:Static app:Strings.HelpTabGuide}" VerticalAlignment="Center"/>
           </StackPanel>
         </TabItem.Header>
-        <ScrollViewer Padding="24,20">
-          <Grid MaxWidth="720" HorizontalAlignment="Center">
-            <TextBlock x:Name="FanConfigHelp" FontSize="{DynamicResource FontSizeSubtitle}"
-                       TextWrapping="Wrap" LineHeight="22"/>
-          </Grid>
-        </ScrollViewer>
-      </TabItem>
-
-      <!-- ── 风扇控制 ── -->
-      <TabItem>
-        <TabItem.Header>
-          <StackPanel Orientation="Horizontal">
-            <ui:SymbolIcon Symbol="Pulse24" FontSize="18" Margin="0,0,6,0"/>
-            <TextBlock Text="{x:Static app:Strings.HelpTabFanControl}" VerticalAlignment="Center"/>
+        <ScrollViewer Padding="0,16,0,16">
+          <StackPanel MaxWidth="720" HorizontalAlignment="Left">
+            <TextBlock Text="{x:Static app:Strings.HelpTabFanConfig}" Style="{StaticResource HelpSectionHead}" Margin="0,0,0,6"/>
+            <TextBlock x:Name="FanConfigHelp" Style="{StaticResource HelpSectionBody}" Margin="0,0,0,22"/>
+            <TextBlock Text="{x:Static app:Strings.HelpTabFanControl}" Style="{StaticResource HelpSectionHead}" Margin="0,0,0,6"/>
+            <TextBlock x:Name="FanControlHelp" Style="{StaticResource HelpSectionBody}" Margin="0,0,0,22"/>
+            <TextBlock Text="{x:Static app:Strings.HelpTabPerformance}" Style="{StaticResource HelpSectionHead}" Margin="0,0,0,6"/>
+            <TextBlock x:Name="PerformanceHelp" Style="{StaticResource HelpSectionBody}" Margin="0,0,0,22"/>
+            <TextBlock Text="{x:Static app:Strings.HelpTabOther}" Style="{StaticResource HelpSectionHead}" Margin="0,0,0,6"/>
+            <TextBlock x:Name="OtherHelp" Style="{StaticResource HelpSectionBody}"/>
           </StackPanel>
-        </TabItem.Header>
-        <ScrollViewer Padding="24,20">
-          <Grid MaxWidth="720" HorizontalAlignment="Center">
-            <TextBlock x:Name="FanControlHelp" FontSize="{DynamicResource FontSizeSubtitle}"
-                       TextWrapping="Wrap" LineHeight="22"/>
-          </Grid>
-        </ScrollViewer>
-      </TabItem>
-
-      <!-- ── 性能控制 ── -->
-      <TabItem>
-        <TabItem.Header>
-          <StackPanel Orientation="Horizontal">
-            <ui:SymbolIcon Symbol="Gauge24" FontSize="18" Margin="0,0,6,0"/>
-            <TextBlock Text="{x:Static app:Strings.HelpTabPerformance}" VerticalAlignment="Center"/>
-          </StackPanel>
-        </TabItem.Header>
-        <ScrollViewer Padding="24,20">
-          <Grid MaxWidth="720" HorizontalAlignment="Center">
-            <TextBlock x:Name="PerformanceHelp" FontSize="{DynamicResource FontSizeSubtitle}"
-                       TextWrapping="Wrap" LineHeight="22"/>
-          </Grid>
-        </ScrollViewer>
-      </TabItem>
-
-      <!-- ── 其他 ── -->
-      <TabItem>
-        <TabItem.Header>
-          <StackPanel Orientation="Horizontal">
-            <ui:SymbolIcon Symbol="Apps24" FontSize="18" Margin="0,0,6,0"/>
-            <TextBlock Text="{x:Static app:Strings.HelpTabOther}" VerticalAlignment="Center"/>
-          </StackPanel>
-        </TabItem.Header>
-        <ScrollViewer Padding="24,20">
-          <Grid MaxWidth="720" HorizontalAlignment="Center">
-            <TextBlock x:Name="OtherHelp" FontSize="{DynamicResource FontSizeSubtitle}"
-                       TextWrapping="Wrap" LineHeight="22"/>
-          </Grid>
         </ScrollViewer>
       </TabItem>
 
@@ -126,18 +107,18 @@
       <TabItem>
         <TabItem.Header>
           <StackPanel Orientation="Horizontal">
-            <ui:SymbolIcon Symbol="Heart24" FontSize="18" Margin="0,0,6,0"/>
+            <ui:SymbolIcon Symbol="Heart24" FontSize="{DynamicResource FontSizeTitle}" Margin="0,0,8,0"/>
             <TextBlock Text="{x:Static app:Strings.HelpTabCredits}" VerticalAlignment="Center"/>
           </StackPanel>
         </TabItem.Header>
-        <ScrollViewer Padding="24,20">
-          <StackPanel MaxWidth="720" HorizontalAlignment="Center">
+        <ScrollViewer Padding="0,16,0,16">
+          <StackPanel MaxWidth="720" HorizontalAlignment="Left">
             <TextBlock FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold"
                        Foreground="{DynamicResource AccentOmenBrush}"
                        Text="{x:Static app:Strings.HelpCreditsSub}" Margin="0,0,0,14"/>
 
             <!-- 每位贡献者一张卡：名字+贡献 同行, 链接下一行 -->
-            <Border CornerRadius="8" Padding="16,12" Background="{DynamicResource ControlFillColorDefaultBrush}" Margin="0,0,0,10">
+            <Border Style="{StaticResource OmenListCard}" Padding="16,12">
               <StackPanel>
                 <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap">
                   <Run Text="MasonDye" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
@@ -150,7 +131,7 @@
               </StackPanel>
             </Border>
 
-            <Border CornerRadius="8" Padding="16,12" Background="{DynamicResource ControlFillColorDefaultBrush}" Margin="0,0,0,10">
+            <Border Style="{StaticResource OmenListCard}" Padding="16,12">
               <StackPanel>
                 <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap">
                   <Run Text="breadeding" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
@@ -165,7 +146,7 @@
               </StackPanel>
             </Border>
 
-            <Border CornerRadius="8" Padding="16,12" Background="{DynamicResource ControlFillColorDefaultBrush}" Margin="0,0,0,10">
+            <Border Style="{StaticResource OmenListCard}" Padding="16,12">
               <StackPanel>
                 <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap">
                   <Run Text="GeographicCone" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
@@ -178,7 +159,7 @@
               </StackPanel>
             </Border>
 
-            <Border CornerRadius="8" Padding="16,12" Background="{DynamicResource ControlFillColorDefaultBrush}" Margin="0,0,0,10">
+            <Border Style="{StaticResource OmenListCard}" Padding="16,12">
               <StackPanel>
                 <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap">
                   <Run Text="OpenHardwareMonitor / hexagon-oss / LibreHardwareMonitor" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
@@ -195,7 +176,7 @@
               </StackPanel>
             </Border>
 
-            <Border CornerRadius="8" Padding="16,12" Background="{DynamicResource ControlFillColorDefaultBrush}" Margin="0,0,0,10">
+            <Border Style="{StaticResource OmenListCard}" Padding="16,12">
               <StackPanel>
                 <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap">
                   <Run Text="lepoco/wpfui" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
@@ -208,7 +189,7 @@
               </StackPanel>
             </Border>
 
-            <Border CornerRadius="8" Padding="16,12" Background="{DynamicResource ControlFillColorDefaultBrush}" Margin="0,0,0,10">
+            <Border Style="{StaticResource OmenListCard}" Padding="16,12">
               <StackPanel>
                 <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap">
                   <Run Text="BartoszCichecki/LenovoLegionToolkit" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
@@ -221,7 +202,7 @@
               </StackPanel>
             </Border>
 
-            <Border CornerRadius="8" Padding="16,12" Background="{DynamicResource ControlFillColorDefaultBrush}" Margin="0,0,0,10">
+            <Border Style="{StaticResource OmenListCard}" Padding="16,12">
               <StackPanel>
                 <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap">
                   <Run Text="henrypp/memreduct" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
@@ -234,7 +215,7 @@
               </StackPanel>
             </Border>
 
-            <Border CornerRadius="8" Padding="16,12" Background="{DynamicResource ControlFillColorDefaultBrush}">
+            <Border Style="{StaticResource OmenListCard}" Padding="16,12">
               <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap">
                 <Run Text="Hypostasis-Cat/HypoMux" FontWeight="SemiBold" Foreground="{DynamicResource TextPrimaryBrush}"/>
                 <Run Text="  —  " Foreground="{DynamicResource TextSecondaryBrush}"/>
@@ -249,25 +230,26 @@
       <TabItem>
         <TabItem.Header>
           <StackPanel Orientation="Horizontal">
-            <ui:SymbolIcon Symbol="Wallet24" FontSize="18" Margin="0,0,6,0"/>
+            <ui:SymbolIcon Symbol="Wallet24" FontSize="{DynamicResource FontSizeTitle}" Margin="0,0,8,0"/>
             <TextBlock Text="{x:Static app:Strings.HelpTabDonate}" VerticalAlignment="Center"/>
           </StackPanel>
         </TabItem.Header>
-        <ScrollViewer Padding="24,20">
-          <StackPanel MaxWidth="720" HorizontalAlignment="Center">
+        <ScrollViewer Padding="0,16,0,16">
+          <StackPanel MaxWidth="720" HorizontalAlignment="Left">
             <TextBlock FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold"
                        Foreground="{DynamicResource AccentOmenBrush}"
                        Text="{x:Static app:Strings.HelpDonateSub}" Margin="0,0,0,12"/>
             <TextBlock FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap" LineHeight="22"
                        Text="{x:Static app:Strings.HelpDonateIntro}" Margin="0,0,0,18"/>
 
-            <Border CornerRadius="8" Padding="16,14" Background="{DynamicResource ControlFillColorDefaultBrush}" Margin="0,0,0,10">
+            <!-- 两个赞助入口,统一 Person24 图标 + 同构布局 -->
+            <Border Style="{StaticResource OmenListCard}" Padding="16,14">
               <Grid>
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="Auto"/>
                   <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <ui:SymbolIcon Grid.Column="0" Symbol="Heart24" FontSize="22" VerticalAlignment="Center"
+                <ui:SymbolIcon Grid.Column="0" Symbol="Person24" FontSize="22" VerticalAlignment="Center"
                                Foreground="{DynamicResource AccentOmenBrush}" Margin="0,0,12,0"/>
                 <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap">
                   <Hyperlink NavigateUri="https://github.com/sponsors/MasonDye" RequestNavigate="Hyperlink_RequestNavigate">
@@ -277,13 +259,13 @@
               </Grid>
             </Border>
 
-            <Border CornerRadius="8" Padding="16,14" Background="{DynamicResource ControlFillColorDefaultBrush}">
+            <Border Style="{StaticResource OmenListCard}" Padding="16,14">
               <Grid>
                 <Grid.ColumnDefinitions>
                   <ColumnDefinition Width="Auto"/>
                   <ColumnDefinition Width="*"/>
                 </Grid.ColumnDefinitions>
-                <ui:SymbolIcon Grid.Column="0" Symbol="Code24" FontSize="22" VerticalAlignment="Center"
+                <ui:SymbolIcon Grid.Column="0" Symbol="Person24" FontSize="22" VerticalAlignment="Center"
                                Foreground="{DynamicResource AccentOmenBrush}" Margin="0,0,12,0"/>
                 <TextBlock Grid.Column="1" VerticalAlignment="Center" FontSize="{DynamicResource FontSizeSubtitle}" TextWrapping="Wrap">
                   <Hyperlink NavigateUri="https://github.com/One1turn" RequestNavigate="Hyperlink_RequestNavigate">
@@ -292,6 +274,7 @@
                 </TextBlock>
               </Grid>
             </Border>
+
 
             <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"
                        TextWrapping="Wrap" Margin="0,14,0,0"
@@ -302,9 +285,10 @@
     </TabControl>
 
     <!-- ── 底栏：关闭(右对齐, 对话框惯例) ── -->
-    <Border Grid.Row="2" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,1,0,0" Padding="24,12">
-      <Button x:Name="BtnClose" Content="{x:Static app:Strings.SysOptClose}"
-              Click="BtnClose_Click" Padding="20,8" HorizontalAlignment="Right" MinWidth="96"/>
+    <Border Grid.Row="2" BorderBrush="{DynamicResource BorderSubtleBrush}" BorderThickness="0,1,0,0" Padding="16,10">
+      <ui:Button x:Name="BtnClose" Content="{x:Static app:Strings.SysOptClose}"
+                 Click="BtnClose_Click" Appearance="Secondary" MinWidth="96" Height="32"
+                 HorizontalAlignment="Right"/>
     </Border>
   </Grid>
 </ui:FluentWindow>

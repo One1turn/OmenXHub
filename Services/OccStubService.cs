@@ -57,10 +57,14 @@ namespace OmenSuperHub.Services {
         RedirectStandardOutput = true, RedirectStandardError = true,
       };
       using (var p = Process.Start(psi)) {
-        string output = p.StandardOutput.ReadToEnd();
-        _ = p.StandardError.ReadToEnd();  // 读空 stderr,防缓冲区填满导致子进程卡死
-        p.WaitForExit(30000);
-        return output ?? "";
+        // ponytail: 双管道并发排空 — 顺序读在 stderr 塞满时互锁;超时击杀防无限等待。
+        // stderr 结果本项目不用(Kill 后异步读会抛),必须显式 ContinueWith 丢弃 —
+        // 未观察的 Task 异常会在 GC 时触发 UnobservedTaskException。
+        var outTask = p.StandardOutput.ReadToEndAsync();
+        _ = p.StandardError.ReadToEndAsync().ContinueWith(t => { var _ = t.Exception; },
+            System.Threading.Tasks.TaskContinuationOptions.OnlyOnFaulted);
+        if (!p.WaitForExit(30000)) { try { p.Kill(); } catch { } p.WaitForExit(); }
+        return outTask.Result ?? "";
       }
     }
 
@@ -141,13 +145,21 @@ namespace OmenSuperHub.Services {
       catch { return false; }
     }
 
-    // ponytail: PFN 来自本机实包 Get-AppxPackage,OLS 包家族名稳定;深链比 ProductId 更不易猜错。
-    const string LightStudioPFN = "AD2F1837.OMENLightStudio_v10z8vjag6ke6";
+    // ponytail: 用 ProductId 而不是 PFN —— `ms-windows-store://pdp/` 文档化的参数是 ProductId。
+    // 依据不是猜:OGH 自带的 HP.Omen.MSStoreInstall.dll 里有 PFN↔ProductId 对照表
+    // (OMENLightStudio_v10z8vjag6ke6 ↔ 9P4LVV1TPWLL),HP 登记的启动 URI 也是 ?ProductId= 形态。
+    const string LightStudioProductId = "9P4LVV1TPWLL";
 
-    /// <summary>拉起 Microsoft Store 到 Light Studio 详情页(explorer 壳,不继承管理员令牌)。
-    /// ms-store 无法静默装,深链是唯一干净路径 — 用户在商店点"获取"完成安装。</summary>
+    /// <summary>拉起 Microsoft Store 到 Light Studio 详情页(explorer 壳,不继承管理员令牌)。</summary>
+    /// <remarks>
+    /// 能打开详情页 ≠ 能装。商店按 HP 在 Partner Center 配的设备白名单判资格:
+    /// 实测本机(Victus 15 笔记本)由 OGH 拉起的同一详情页显示「此应用对于你的当前设备不受支持」、
+    /// 「获取」置灰 —— OLS 面向 OMEN 台式机(45L/35L/25L/40L/40XT/15/30L)。
+    /// 所以 OLS 并没有下架(包体 1.0.69.0 x64 Msix 仍可被 displaycatalog 解析),
+    /// 只是不受支持的设备走到详情页为止;这类机型要用本程序自带的灯光页。
+    /// </remarks>
     public static bool InstallLightStudio() {
-      try { Process.Start("explorer.exe", "\"ms-windows-store://pdp/?PFN=" + LightStudioPFN + "\"")?.Dispose(); return true; }
+      try { Process.Start("explorer.exe", "\"ms-windows-store://pdp/?ProductId=" + LightStudioProductId + "\"")?.Dispose(); return true; }
       catch { return false; }
     }
   }

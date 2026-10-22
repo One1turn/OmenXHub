@@ -5,9 +5,9 @@
       xmlns:app="clr-namespace:OmenSuperHub"
       Title="{x:Static app:Strings.PageNetworkBoost}">
 
-  <ScrollViewer VerticalScrollBarVisibility="Auto">
-    <StackPanel Margin="24,20" TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
-      <TextBlock Text="{x:Static app:Strings.PageNetworkBoost}" FontSize="22" FontWeight="Bold" Margin="0,0,0,16"/>
+  <ScrollViewer Style="{DynamicResource OmenScrollViewer}" VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="{DynamicResource PageMargin}" TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
+      <TextBlock Text="{x:Static app:Strings.PageNetworkBoost}" FontSize="{DynamicResource FontSizePageTitle}" FontWeight="Medium" Margin="0,0,0,16"/>
       <ui:Button x:Name="GotoRulesBtn" Content="{x:Static app:Strings.SidebarRoutingRules}"
                  Click="GotoRulesBtn_Click" Appearance="Secondary" HorizontalAlignment="Right" Margin="0,-40,0,0"/>
 
@@ -22,7 +22,7 @@
             <StackPanel>
               <StackPanel Orientation="Horizontal">
                 <ui:SymbolIcon Symbol="PlugConnected24" FontSize="{DynamicResource FontSizeHeader}" Margin="0,0,8,0"/>
-                <TextBlock Text="{x:Static app:Strings.BoostModeHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" VerticalAlignment="Center"/>
+ <TextBlock Text="{x:Static app:Strings.BoostModeHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
               </StackPanel>
               <TextBlock Text="{x:Static app:Strings.BoostModeDesc}" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0" TextWrapping="Wrap"/>
               <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
@@ -57,7 +57,7 @@
               <StackPanel>
                 <StackPanel Orientation="Horizontal">
                   <ui:SymbolIcon Symbol="NetworkAdapter16" FontSize="{DynamicResource FontSizeHeader}" Margin="0,0,8,0"/>
-                  <TextBlock Text="{x:Static app:Strings.BoostNicHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" VerticalAlignment="Center"/>
+ <TextBlock Text="{x:Static app:Strings.BoostNicHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
                 </StackPanel>
                 <TextBlock Text="{x:Static app:Strings.BoostNicDesc}" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0"/>
               </StackPanel>
@@ -78,7 +78,7 @@
           <StackPanel>
             <StackPanel Orientation="Horizontal">
               <ui:SymbolIcon Symbol="Gauge24" FontSize="{DynamicResource FontSizeHeader}" Margin="0,0,8,0"/>
-              <TextBlock Text="{x:Static app:Strings.BoostLimitHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" VerticalAlignment="Center"/>
+ <TextBlock Text="{x:Static app:Strings.BoostLimitHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
             </StackPanel>
             <TextBlock Text="{x:Static app:Strings.BoostLimitDesc}" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0" TextWrapping="Wrap"/>
             <Grid Margin="0,12,0,0">
@@ -111,7 +111,7 @@
           <StackPanel>
             <StackPanel Orientation="Horizontal">
               <ui:SymbolIcon Symbol="DataTrending24" FontSize="{DynamicResource FontSizeHeader}" Margin="0,0,8,0"/>
-              <TextBlock Text="{x:Static app:Strings.BoostTelemetryHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" Foreground="{DynamicResource AccentOmenBrush}" VerticalAlignment="Center"/>
+ <TextBlock Text="{x:Static app:Strings.BoostTelemetryHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
             </StackPanel>
             <TextBlock Text="{x:Static app:Strings.BoostTelemetryDesc}" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" Margin="0,2,0,0"/>
             <Grid Margin="0,14,0,0">
@@ -121,20 +121,20 @@
                 <ColumnDefinition Width="*"/>
               </Grid.ColumnDefinitions>
               <StackPanel HorizontalAlignment="Center">
-                <TextBlock x:Name="TotalDownText" Text="0.0" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center" Foreground="{DynamicResource AccentGreenBrush}"/>
+                <TextBlock x:Name="TotalDownText" Text="0.0" FontSize="{DynamicResource FontSizeStatValue}" FontWeight="Bold" HorizontalAlignment="Center" Foreground="{DynamicResource AccentGreenBrush}"/>
                 <TextBlock Text="{x:Static app:Strings.BoostDown}" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center" Margin="0,2,0,0"/>
               </StackPanel>
               <StackPanel Grid.Column="1" HorizontalAlignment="Center">
-                <TextBlock x:Name="TotalUpText" Text="0.0" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center" Foreground="{DynamicResource AccentYellowBrush}"/>
+                <TextBlock x:Name="TotalUpText" Text="0.0" FontSize="{DynamicResource FontSizeStatValue}" FontWeight="Bold" HorizontalAlignment="Center" Foreground="{DynamicResource AccentYellowBrush}"/>
                 <TextBlock Text="{x:Static app:Strings.BoostUp}" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center" Margin="0,2,0,0"/>
               </StackPanel>
               <StackPanel Grid.Column="2" HorizontalAlignment="Center">
-                <TextBlock x:Name="TotalConnText" Text="0" FontSize="24" FontWeight="Bold" HorizontalAlignment="Center" Foreground="{DynamicResource AccentOmenBrush}"/>
+                <TextBlock x:Name="TotalConnText" Text="0" FontSize="{DynamicResource FontSizeStatValue}" FontWeight="Bold" HorizontalAlignment="Center" Foreground="{DynamicResource AccentOmenBrush}"/>
                 <TextBlock Text="{x:Static app:Strings.BoostConnections}" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}" HorizontalAlignment="Center" Margin="0,2,0,0"/>
               </StackPanel>
             </Grid>
             <TextBox x:Name="LogBox" IsReadOnly="True" Height="96" Margin="0,14,0,0"
-                     TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontFamily="Consolas" FontSize="{DynamicResource FontSizeCaption}"/>
+                     TextWrapping="Wrap" VerticalScrollBarVisibility="Auto" FontFamily="{DynamicResource MonoFontFamily}" FontSize="{DynamicResource FontSizeCaption}"/>
           </StackPanel>
         </ui:CardControl.Header>
       </ui:CardControl>

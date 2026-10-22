@@ -276,6 +276,11 @@ namespace OmenSuperHub {
     }
 
     // ─── NVIDIA 官方温度源 ───
+    // ponytail: 本方法被 HardwareService 以 ~1s 节奏轮询,故收尾不做 Unload——
+    // 每拍 Initialize+Unload 的往返开销大于复用会话。兄弟 4 对 init/unload 方法
+    // (超频读写,用户操作低频)保留各自收尾 Unload,拆掉会话后下一拍这里 Initialize 自然重建。
+    // 不自建"常驻"标志:NvAPI_Unload 是否引用计数无法从 Resources/NvidiaApi.dll 二进制证实,
+    // 且标志会被兄弟方法的 Unload 弄假。
     public static bool TryGetNvApiTemperature(string preferredGpuName, out float celsius) {
       celsius = 0;
       try {
@@ -292,7 +297,6 @@ namespace OmenSuperHub {
         }
         return false;
       } catch { return false; }
-      finally { try { NVIDIA.Unload(); } catch { } }
     }
 
     public static bool TryGetNvmlTemperature(string preferredGpuName, out float celsius) {
@@ -348,8 +352,11 @@ namespace OmenSuperHub {
       static bool _ok;
       public static bool EnsureInit() {
         if (_init) return _ok;
-        _init = true;
+        // #34: 原实现 _init=true 先于 init 结果,一次驱动瞬态不可用即被永久钉死 false。
+        // 改为成功才钉住;失败不置位,下一拍调用自动重试。nvmlShutdown 仓内零调用点,
+        // 成功后的会话不会被拆除,故 _init=true 恒安全。
         _ok = nvmlInit_v2() == SUCCESS;
+        _init = _ok;
         return _ok;
       }
       public static bool TryGetGpu(out IntPtr gpu) => TryGetGpu(null, out gpu);

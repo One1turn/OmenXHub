@@ -40,15 +40,20 @@ namespace OmenSuperHub.Pages {
       NicLimitBox.LostFocus += OnLimitLostFocus;
       _loading = false;
 
-      BoostService.Scan();
-      RebuildNicList();
-      UpdateStatus();
+      // ponytail: 网卡扫描(Scan 走 WMI 枚举)+ 重建列表 + 起 1s 轮询 timer 推迟到导航过渡
+      // 动画跑完之后 —— 原地跑会把 UI 线程占住,200ms 的上升动画一帧都渲染不出来(实测阻塞
+      // ~597ms)。详见 WindowHelper.RunAfterNavTransition 的采样数据。
+      WindowHelper.RunAfterNavTransition(Dispatcher, () => {
+        BoostService.Scan();
+        RebuildNicList();
+        UpdateStatus();
 
-      // ponytail: 守卫 —— 页被缓存且上次 Unloaded 未触发时旧 timer 可能仍在跑,先停再建避免叠加。
-      if (_timer != null) { _timer.Stop(); _timer = null; }
-      _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
-      _timer.Tick += OnTimerTick;
-      _timer.Start();
+        // ponytail: 守卫 —— 页被缓存且上次 Unloaded 未触发时旧 timer 可能仍在跑,先停再建避免叠加。
+        if (_timer != null) { _timer.Stop(); _timer = null; }
+        _timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(1) };
+        _timer.Tick += OnTimerTick;
+        _timer.Start();
+      });
     }
 
     void OnLimitLostFocus(object s, RoutedEventArgs e) => SaveLimitValue();
@@ -64,7 +69,9 @@ namespace OmenSuperHub.Pages {
       ConfigService.Save("BoostNicLimit");
     }
 
-    static int ParseLimitBox(System.Windows.Controls.TextBox box, int current) {
+    // 审查修复 #12: 升 internal static,RoutingRulesPage.SaveAll 复用 —— 溢出/垃圾输入
+    // 还原为当前值而非静默落 0(=不限速,语义相反),显示与存储保持一致。
+    internal static int ParseLimitBox(System.Windows.Controls.TextBox box, int current) {
       string t = (box.Text ?? "").Trim();
       if (t.Length == 0) return 0;
       if (int.TryParse(t, out int v) && v >= 0) return v;
@@ -123,8 +130,12 @@ namespace OmenSuperHub.Pages {
         string err = "";
         bool ok = true;
         await System.Threading.Tasks.Task.Run(() => {
-          if (wasRunning) BoostService.Stop();
-          else ok = BoostService.Start(out err);
+          // 审查修复 #45: 体内抛异常原样经 await 落 DispatcherUnhandledException
+          // (App.xaml.cs:88-91)被吞并只记日志,用户以为已开启。catch 回落到下方 !ok 提示。
+          try {
+            if (wasRunning) BoostService.Stop();
+            else ok = BoostService.Start(out err);
+          } catch (Exception ex) { ok = false; err = ex.Message; }
         });
         if (!ok) DialogHelper.Error(err);
       } finally {
@@ -171,8 +182,9 @@ namespace OmenSuperHub.Pages {
     void OnTimerTick(object s, EventArgs e) {
       // ponytail: RefreshTotals 是亲 UI 的只读聚合 (sums NicInfo.Down/UpMbps, 后端 ProxyEngine
       // 已经自己维护这些值);窗口关闭到托盘时刷新三个 TextBlock 是看不见的写。
-      // BoostService 代理线程独立运行,本 timer 关停不影响加速。窗口恢复下次进页 Loaded 重启。
-      if (Window.GetWindow(this)?.IsVisible != true) { _timer?.Stop(); return; }
+      // 与 DashboardPage 同款守卫:只 return 不 Stop —— Stop 之后全靠 Unloaded/Loaded 循环重启,
+      // 万一页面被缓存复用而 Loaded 未再触发,数据就永久停更。空跑一帧的代价只是一次 IsVisible 读。
+      if (Window.GetWindow(this)?.IsVisible != true) return;
       BoostService.RefreshTotals();
       TotalDownText.Text = BoostService.TotalDownMbps.ToString("F1");
       TotalUpText.Text = BoostService.TotalUpMbps.ToString("F1");

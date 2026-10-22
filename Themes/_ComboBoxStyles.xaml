@@ -159,7 +159,7 @@
     <Setter Property="BorderBrush" Value="{DynamicResource CardElevationBorderBrush}"/>
     <Setter Property="BorderThickness" Value="1"/>
     <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}"/>
-    <Setter Property="FontFamily" Value="Consolas, Microsoft YaHei UI, Segoe UI"/>
+    <Setter Property="FontFamily" Value="{DynamicResource MonoFontFamily}"/>
     <Setter Property="FontSize" Value="12"/>
     <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Auto"/>
     <Setter Property="ScrollViewer.VerticalScrollBarVisibility" Value="Auto"/>

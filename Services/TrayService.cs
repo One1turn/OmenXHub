@@ -594,6 +594,11 @@ namespace OmenSuperHub.Services {
       // 取舍(阻塞期间重复写入本身也是风险)。
       fanControlTimer = new System.Threading.Timer((e) => {
         if (System.Threading.Interlocked.Exchange(ref _fanTickRunning, 1) != 0) return;
+        // ponytail: WMI 健康门关闭(EC 冷窗口/断连退避中)时整拍跳过 —— 不算 WMI 失败、
+        // 不触发 PawnIO 直写兜底。保活语义取舍:退避期内无法保活,但彼时写入本来就全失败
+        // (风扇控制已失效);门重开后首拍即恢复 1Hz 写入并重建控制,优于对着冷 EC 狂写
+        // (严查:内核 ACPI"EC 未响应"事件全部落在开机未就绪窗口)。
+        if (!OmenHardware.WmiGateOpen) { System.Threading.Interlocked.Exchange(ref _fanTickRunning, 0); return; }
         try {
         int fanSpeed1, fanSpeed2;
         // ponytail: FanSync 开启时,两条路径内部已用 max(CPU,GPU) 算出同源 RPM。
@@ -640,6 +645,10 @@ namespace OmenSuperHub.Services {
     }
 
     static void OptimiseSchedule() {
+      // ponytail: 健康门关闭(开机冷窗口/断连退避)时整拍跳过 —— 关键是不消费 flagStart<5
+      // 的 5 拍重发窗口:窗口顺延到 WMI/EC 就绪后才开始走,保住 issue #20 "启动窗口内按配置
+      // 重发 FanMode"的本意(旧代码窗口在 EC 未就绪时被白白烧掉,重发全部落空)。
+      if (!OmenHardware.WmiGateOpen) return;
       // ponytail: AMD EC 可能在低温跨温度阈值时自动退出 performance 热策略，
       // 每 30 秒重申一次，确保 EC 保持在软件风扇控制模式。
       if (OmenHardware.HasAmdCpu()) try { SetFanModeCompat(0x31); } catch { }
@@ -1246,6 +1255,13 @@ namespace OmenSuperHub.Services {
       if (_lastRenderedTemp != int.MinValue)
         fails.Add("ApplyIconStyle 未重置动态图标去重哨兵(切样式后同温 tick 不再重绘)");
       _lastRenderedTemp = savedTemp;
+      // 自启幂等判定:任务缺失/目标 exe 失效必须重注册;目标健在绝不重写(防开机任务被
+      // "最近一次手动启动路径"劫持 —— 2026-09-30 严查实录)。
+      if (!NeedsAutostartReRegister(false, null)) fails.Add("任务缺失必须重注册");
+      if (NeedsAutostartReRegister(true, AppDomain.CurrentDomain.BaseDirectory + "OmenXHub.exe"))
+        fails.Add("目标 exe 健在不应重注册");
+      if (!NeedsAutostartReRegister(true, AppDomain.CurrentDomain.BaseDirectory + "definitely-missing-autostart-probe.exe"))
+        fails.Add("目标 exe 失效应重注册");
       return fails.Count == 0 ? "PASS TrayService dynamic-icon render"
         : "FAIL TrayService dynamic-icon:\n  " + string.Join("\n  ", fails);
     }
@@ -1396,6 +1412,20 @@ namespace OmenSuperHub.Services {
     public static void AutoStartEnable() {
       string currentPath = AppDomain.CurrentDomain.BaseDirectory;
       using (TaskService ts = new TaskService()) {
+        // ponytail: 幂等 —— 任务已存在且目标 exe 仍有效就绝不重写。旧实现每次启动都用
+        // 当前进程路径重建任务,自启目标跟着"最近一次手动启动"漂移(2026-09-30 严查实录:
+        // 开机任务被手动调试点到开发构建目录,StartBoundary 每次启动翻新)。要换绑新路径:
+        // 设置里把自启关/开一次(显式意图),或目标 exe 失效时此处自动自愈重建。
+        bool exists = false;
+        string existingPath = null;
+        try {
+          var existing = ts.FindTask("OmenXHub");
+          exists = existing != null;
+          var exec = existing?.Definition.Actions.OfType<Microsoft.Win32.TaskScheduler.ExecAction>().FirstOrDefault();
+          existingPath = exec?.Path;
+        } catch { }   // 任务损坏/不可读 → exists=false 走重建
+        if (!NeedsAutostartReRegister(exists, existingPath)) { CleanUpAndRemoveTasks(); return; }
+
         TaskDefinition td = ts.NewTask();
         td.RegistrationInfo.Description = "Start OMEN X Hub with admin rights";
         td.Principal.RunLevel = TaskRunLevel.Highest;
@@ -1409,6 +1439,12 @@ namespace OmenSuperHub.Services {
         ts.RootFolder.RegisterTaskDefinition(@"OmenXHub", td);
       }
       CleanUpAndRemoveTasks();
+    }
+
+    /// <summary>自启任务是否需要(重)注册:缺失、损坏或目标 exe 已失效才重建;目标健在则永不定位于"当前进程路径"。</summary>
+    internal static bool NeedsAutostartReRegister(bool taskExists, string existingExePath) {
+      if (!taskExists) return true;
+      try { return string.IsNullOrEmpty(existingExePath) || !File.Exists(existingExePath); } catch { return true; }
     }
 
     public static void AutoStartDisable() {

@@ -138,8 +138,12 @@ namespace OmenSuperHub {
 
     private const int WMI_COMMAND_ID = 131081;
 
-    private static readonly Dictionary<LightingDevice, List<System.Windows.Media.Color>> _lastDeviceColors =
-        new Dictionary<LightingDevice, List<System.Windows.Media.Color>>();
+    // R15/BUG-R15-3: 静态字典被 UI 线程(Apply/亮度)、动画定时器线程池、温度联动定时器、
+    // HardwareApiService HTTP 线程并发读写 —— 无锁 Dictionary 并发写+读是经典结构损坏
+    // (InvalidOperationException / 死循环)。写侧本就存防御性副本、读侧只 TryGetValue,
+    // 换 ConcurrentDictionary 即线程安全。
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<LightingDevice, List<System.Windows.Media.Color>> _lastDeviceColors =
+        new System.Collections.Concurrent.ConcurrentDictionary<LightingDevice, List<System.Windows.Media.Color>>();
 
     public static int OpenHidDevice(int pid, int vid, string interfaceString = "") {
       try {
@@ -463,6 +467,12 @@ namespace OmenSuperHub {
       }
     }
 
+    // ponytail: BasicFourZone 色表"读(命令2)→改→写(命令3)"跨两条 WMI 命令,必须原子 —
+    // SendOmenBiosWmi 内部 _scopeLock 只串行化单条命令,拦不住两段之间的窗口:UI 点击/
+    // 动画帧/HTTP API 并发时 B 读旧表→A 写新表→B 把旧色表连自家改动一起写回 = 混色/旧色回卷。
+    // 锁体只有两次 SendOmenBiosWmi + 数组改值,零回调/零 Dispatcher/零 await → 无跨层死锁路径。
+    static readonly object _zoneTableRmwLock = new();
+
     public static void SetZoneStaticColor(LightingDevice device, List<System.Windows.Media.Color> colors,
         byte brightness, LightingControlInterface controlInterface) {
       if (colors == null || colors.Count != 4)
@@ -487,15 +497,17 @@ namespace OmenSuperHub {
             break;
           }
         case LightingControlInterface.BasicFourZone: {
-            byte[] table = SendOmenBiosWmi(2, new byte[1] { 0 }, 128, WMI_COMMAND_ID);
-            if (table == null || table.Length < 37) return;
-            for (int i = 0; i < 4; i++) {
-              int idx = 25 + i * 3;
-              table[idx] = colors[i].R;
-              table[idx + 1] = colors[i].G;
-              table[idx + 2] = colors[i].B;
+            lock (_zoneTableRmwLock) {
+              byte[] table = SendOmenBiosWmi(2, new byte[1] { 0 }, 128, WMI_COMMAND_ID);
+              if (table == null || table.Length < 37) return;
+              for (int i = 0; i < 4; i++) {
+                int idx = 25 + i * 3;
+                table[idx] = colors[i].R;
+                table[idx + 1] = colors[i].G;
+                table[idx + 2] = colors[i].B;
+              }
+              SendOmenBiosWmi(3, table, 0, WMI_COMMAND_ID);
             }
-            SendOmenBiosWmi(3, table, 0, WMI_COMMAND_ID);
             break;
           }
         default:
@@ -680,7 +692,9 @@ namespace OmenSuperHub {
 
     public static System.Windows.Media.Color[] GetZoneStaticColor() {
       byte[] result = SendOmenBiosWmi(2, new byte[1] { 0 }, 128, WMI_COMMAND_ID);
-      if (result == null || result.Length < 22) return null;
+      // 取数最大下标 25+3*3+2=36,长度须 ≥37 — 与写入侧 SetZoneStaticColor 的守卫一致
+      // (ponytail: 原 <22 是拍脑袋值,22..36 长度必 IndexOutOfRange)
+      if (result == null || result.Length < 37) return null;
       var colors = new System.Windows.Media.Color[4];
       for (int i = 0; i < 4; i++) {
         int idx = 25 + i * 3;

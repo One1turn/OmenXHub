@@ -36,10 +36,11 @@
   <!-- NuGet Packages -->
   <ItemGroup>
     <PackageReference Include="HidSharp" Version="2.1.0" />
-    <PackageReference Include="Microsoft.Windows.WDK.x64" Version="10.0.28000.1839" />
     <PackageReference Include="NAudio" Version="2.2.1" />
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
     <PackageReference Include="NvAPIWrapper.Net" Version="0.8.1.101" />
+    <!-- ponytail: 二维码分享(局域网 WebUI)显式需求;QRCoder PngByteQRCode 零依赖、不拉 System.Drawing -->
+    <PackageReference Include="QRCoder" Version="1.4.3" />
     <!-- ponytail: removed unused Microsoft.Extensions.ObjectPool 6.0.4 -->
 
     <PackageReference Include="System.Resources.Extensions" Version="8.0.0" />
@@ -87,8 +88,7 @@
     </Reference>
     <!-- Intel XTU 超频: 复用 OGH (OmenCommandCenter) 的官方托管 SDK。
          传输层是 HP 自有 MSRPC/ncalrpc (端点 HPOmenRpcEndpoint,NativeRpcClient.dll 原生实现) —
-         自造管道协议不可行(XtuService.exe 不开命名管道)。NativeRpcClient 为原生 DLL,
-         启动时经 ExtractAndPreloadNativeDll 释放到 exe 目录。 -->
+         自造管道协议不可行(XtuService.exe 不开命名管道)。 -->
     <Reference Include="IntelXTUSDK">
       <HintPath>Resources\IntelXTUSDK.dll</HintPath>
       <Private>true</Private>
@@ -105,7 +105,6 @@
       <HintPath>Resources\System.Threading.Tasks.Extensions.dll</HintPath>
       <Private>true</Private>
     </Reference>
-    <EmbeddedResource Include="Resources\NativeRpcClient.dll" />
   </ItemGroup>
 
   <!-- Framework References -->
@@ -114,7 +113,6 @@
     <Reference Include="System.Web" />
     <Reference Include="System.Web.Extensions" />
     <Reference Include="System.Management" />
-    <Reference Include="System.Numerics" />
     <Reference Include="Microsoft.VisualBasic" />
     <!-- ponytail: System.Windows.Forms.DataVisualization / WindowsFormsIntegration 0 引用已删除 -->
   </ItemGroup>
@@ -128,6 +126,7 @@
   <ItemGroup>
     <Compile Remove="packages\**" />
     <Compile Remove="backup\**" />
+    <Compile Remove="artifacts\**" />
     <!-- ponytail: OverlayDemo 是独立 overlay 演示工程(SelectorWindow/OverlayWidgetWindow),
          与 tools\ 同理不得并入主程序编译;Compile+Page 双重排除(SDK 风格 WPF 隐式 glob
          会分别把 .cs 与 .xaml 编进来,只除 Compile 会留半编译状态)。 -->
@@ -158,6 +157,8 @@
     <EmbeddedResource Include="Resources\OmenLightingSDK.dll" />
     <EmbeddedResource Include="Resources\SingBox\sing-box.exe.gz" />
     <EmbeddedResource Include="Resources\SingBox\wintun.dll.gz" />
+    <!-- 局域网 WebUI 单页(HTML+CSS+JS 一体),HardwareApiService 启动时读一次缓存 -->
+    <EmbeddedResource Include="Resources\webui.html" />
   </ItemGroup>
 
   <!-- Resource (Fluent Icons) -->
@@ -179,12 +180,10 @@
   <!-- Exclude old packages/ folder from reference resolution -->
   <PropertyGroup>
     <ResolveAssemblyReferencesSilentlyPreferTargetFrameworkDirectory>true</ResolveAssemblyReferencesSilentlyPreferTargetFrameworkDirectory>
-    <!-- ponytail: WDK 10.0.28000.1839 wants SDK.CPP.x64 exactly 10.0.28000 but only 10.0.28000.1721 is available;
-         patch-level difference is harmless for build. Suppress the fall-back warning.
-         Also suppress MSB3245/MSB3246 — Mono.Posix only loaded via reflection on Linux path;
+    <!-- ponytail: MSB3245/MSB3246 — Mono.Posix only loaded via reflection on Linux path;
          never executed on Windows-only OmenSuperHub build. MSB3277 — Unsafe 6.0.0 vs HP 链 6.0.3.0
          的参考解析冲突已由 app.config 重定向 6.0.3.0→6.0.0.0 消解,仅剩编译期提示。 -->
-    <NoWarn>$(NoWarn);NU1603;MSB3245;MSB3246;MSB3277</NoWarn>
+    <NoWarn>$(NoWarn);MSB3245;MSB3246;MSB3277</NoWarn>
   </PropertyGroup>
 
 </Project>

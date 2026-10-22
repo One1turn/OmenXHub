@@ -15,6 +15,13 @@ namespace OmenSuperHub.Pages {
       "epicgameslauncher.exe", "firefox.exe", "spotify.exe", "msedge.exe"
     };
 
+    // 审查修复 #26/#50: 提示去重状态 —— _corruptWarned=损坏拒写只弹一次(9 个 SaveAll
+    // 调用点都在 LostFocus/点击链上,不抑制会刷屏);_overwriteOnce=ClearAll 用户显式
+    // 确认后放行一次覆写;_saveErrShown=写盘失败提示一次,恢复成功后复位。
+    bool _corruptWarned;
+    bool _overwriteOnce;
+    bool _saveErrShown;
+
     public RoutingRulesPage() {
       InitializeComponent();
       Loaded += OnLoaded;
@@ -112,7 +119,9 @@ namespace OmenSuperHub.Pages {
         Width = 100,
         Margin = new Thickness(0, 0, 6, 0),
         FontSize = 13,
-        Tag = "limit"
+        // 审查修复 #12: Tag 原为无人读取的死标记 "limit",改存该行最后落盘的限速值,
+        // ParseLimitBox 遇到垃圾/溢出输入时还原用它。
+        Tag = limitKBps
       };
       limitTb.LostFocus += (s, e) => SaveAll();
       Grid.SetColumn(limitTb, 2);
@@ -162,6 +171,7 @@ namespace OmenSuperHub.Pages {
     void ClearAllBtn_Click(object s, RoutedEventArgs e) {
       if (RulesPanel.Children.Count == 0) return;
       if (DialogHelper.Confirm(Strings.BoostRulesClearAll + "?")) {
+        _overwriteOnce = true; // 审查修复 #26: 显式确认的清空 = 用户要覆写规则文件(含损坏态)
         RulesPanel.Children.Clear();
         AddRow("", "aggregation", 0);
         SaveAll();
@@ -174,22 +184,50 @@ namespace OmenSuperHub.Pages {
     }
 
     void SaveAll() {
+      // 审查修复 #26: Load 判定文件损坏(反序列化抛/返 null)时拒写 —— 否则页面显示空
+      // 规则,任一编辑把空列表覆写回文件 = 清空。只拦自动保存;ClearAll 用户显式确认
+      // 后放行一次(_overwriteOnce)。守卫收在共享入口,9 个调用点零改动不会漏。
+      if (RoutingRuleStore.Corrupt && !_overwriteOnce) {
+        if (!_corruptWarned) {
+          _corruptWarned = true;
+          DialogHelper.Warn("分流规则文件已损坏(原文件已备份为 routing-rules.json.bak),已暂停保存以防误清空。确认可覆盖时,点击「全部清除」并确认。");
+        }
+        return;
+      }
+      _overwriteOnce = false;
+
       var rules = new List<RoutingRule>();
+      // 审查修复 #13: 手动输入(LostFocus/选进程/删除等 9 个入口)旧代码直接落盘不去重,
+      // IsDuplicate 只拦预设路径。共享入口按进程名(忽略大小写)首条生效去重 —— 与预设
+      // 路径同语义;若上游 sing-box 确为首条命中,后写副本本就是死配置,不写更干净。
+      var seen = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
       foreach (var child in RulesPanel.Children) {
         if (child is Grid g) {
           var tb = GetTextBox(g, 0);
           if (tb == null || string.IsNullOrWhiteSpace(tb.Text)) continue;
           var limitTb = GetTextBox(g, 2);
           int limit = 0;
-          if (limitTb != null) int.TryParse((limitTb.Text ?? "").Trim(), out limit);
+          if (limitTb != null) {
+            // 审查修复 #12: 溢出/垃圾输入 int.TryParse 失败静默落 0(=不限速),语义相反且无提示。
+            // 复用 NetworkBoostPage.ParseLimitBox 先例: 还原为该行最后落盘值(Tag),显示与存储一致。
+            limit = NetworkBoostPage.ParseLimitBox(limitTb, (limitTb.Tag as int?) ?? 0);
+            limitTb.Tag = limit;
+          }
+          var name = tb.Text.Trim();
+          if (!seen.Add(name)) continue;
           rules.Add(new RoutingRule {
-            ProcessName = tb.Text.Trim(),
+            ProcessName = name,
             Outbound = tb.Tag as string ?? "aggregation",
             LimitKBps = System.Math.Max(0, limit)
           });
         }
       }
-      RoutingRuleStore.Save(rules);
+      // 审查修复 #50: Store.Save 写盘失败不再被空 catch 静默吞掉(编辑丢失需提示,一次性)。
+      if (RoutingRuleStore.Save(rules)) _saveErrShown = false;
+      else if (!_saveErrShown) {
+        _saveErrShown = true;
+        DialogHelper.Error("分流规则保存失败：写入磁盘出错,当前编辑未持久化(详情见日志)。");
+      }
     }
   }
 }

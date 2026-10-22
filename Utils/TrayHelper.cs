@@ -112,7 +112,7 @@ namespace OmenSuperHub.Utils {
         // — without this, SizeToContent="Height" popups may still report a stale
         // (under-sized) height at ContentRendered/Idle and open too low.
         w.UpdateLayout();
-        double popupW_wpf = w.ActualWidth > 0 ? w.ActualWidth : 280;
+        double popupW_wpf = w.ActualWidth > 0 ? w.ActualWidth : 328;
         double popupH_wpf = w.ActualHeight > 0 ? w.ActualHeight : 160;
         var mouse = Control.MousePosition;
         var screen = Screen.FromPoint(mouse).WorkingArea;
@@ -163,8 +163,12 @@ namespace OmenSuperHub.Utils {
           w.Top = Math.Max(wa.Top, mouse.Y - (int)w.ActualHeight - 8);
         } catch {
           var wa = SystemParameters.WorkArea;
-          w.Left = wa.Right - 290;
-          w.Top = wa.Bottom - 200;
+          // ponytail: 窗口外包了 24px 阴影留白(280→328),固定偏移已失准;按实测尺寸贴右下留 8px。
+          // Actual 为 0(SizeToContent 首帧未测量)时退回 MoveToCursor 同款兜底尺寸。
+          double ww = w.ActualWidth > 0 ? w.ActualWidth : 328;
+          double wh = w.ActualHeight > 0 ? w.ActualHeight : 160;
+          w.Left = wa.Right - ww - 8;
+          w.Top = wa.Bottom - wh - 8;
         }
       }
     }
@@ -272,7 +276,7 @@ namespace OmenSuperHub.Utils {
         ConfigService.Language = lang.ToString();
         ConfigService.Save("Language");
         BuildContextMenu();
-        Views.MainWindow.ApplyLanguageToInstance();
+        // ponytail: 主窗口不实时切换 — 页面文本在重开主面板(ReleaseFrontend 清页面缓存)后生效
       };
       return item;
     }

@@ -47,10 +47,16 @@
         </StackPanel>
       </ui:TitleBar.Header>
       <ui:TitleBar.TrailingContent>
-		<ui:Button x:Name="PinButton" Appearance="Transparent" Width="34" Height="34"
-	                   ToolTip="{x:Static app:Strings.MainWindowPinTooltipOn}" Margin="0,0,4,0" Padding="0"
+        <!-- ponytail: 置顶按钮 64×24 长条,默认无填充(与最小化/最大化/关闭同层级),
+             仅**已置顶时**填 Windows 强调色 —— 强调色是状态指示,不是常驻装饰。
+             实心强调色常亮时是一块高饱和色块,比关闭 X 还抢眼(实测反馈"好丑")。
+             SystemAccentColorSecondary 由 ThemeService 从 HKCU DWM\AccentColor 覆盖。
+             垂直:margin 上边距 3,与右侧窗口按钮图标行光学同轴(150% 缩放下实测)。 -->
+		<ui:Button x:Name="PinButton" Width="64" Height="24" Appearance="Transparent"
+	                   VerticalAlignment="Top" Margin="0,3,4,0" Padding="0"
+	                   ToolTip="{x:Static app:Strings.MainWindowPinTooltipOn}"
                    Click="PinToggle_Click">
-          <ui:SymbolIcon x:Name="PinIcon" Symbol="Pin24" FontSize="{DynamicResource FontSizeTitle}" Margin="2"/>
+          <ui:SymbolIcon x:Name="PinIcon" Symbol="Pin24" FontSize="{DynamicResource FontSizeBody}" Margin="0"/>
         </ui:Button>
       </ui:TitleBar.TrailingContent>
     </ui:TitleBar>
@@ -63,7 +69,7 @@
                           PaneDisplayMode="Left" OpenPaneLength="80" CompactPaneLength="80"
                           IsBackButtonVisible="Collapsed" IsPaneToggleVisible="False"
                           Padding="0" Margin="0"
-                          FrameMargin="16,8,8,8"
+                          FrameMargin="0"
                           ItemTemplate="{StaticResource OmenNavItemTemplate}"
                           Navigated="NavigationView_Navigated">
         <ui:NavigationView.Background>
@@ -138,9 +144,9 @@
 
 	        <ui:NavigationView.PaneFooter>
 	          <StackPanel Margin="4,0,4,14">
-	            <TextBlock x:Name="StatusBarIcon" FontSize="{DynamicResource FontSizeTitle}"
-	                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-	                       TextAlignment="Center"/>
+		            <ui:SymbolIcon x:Name="StatusBarIcon" FontSize="{DynamicResource FontSizeTitle}"
+		                           Foreground="{DynamicResource TextFillColorSecondaryBrush}"
+		                           HorizontalAlignment="Center"/>
 	            <TextBlock x:Name="StatusBarText" FontSize="{DynamicResource FontSizeCaption}"
 	                       Foreground="{DynamicResource TextFillColorSecondaryBrush}"
 	                       TextWrapping="Wrap" TextAlignment="Center"/>

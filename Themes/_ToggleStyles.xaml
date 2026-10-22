@@ -76,14 +76,8 @@
               </Grid.ColumnDefinitions>
               <Border x:Name="ActiveIndicator" Grid.Column="0" Width="3" CornerRadius="1.5"
                       HorizontalAlignment="Left" VerticalAlignment="Stretch"
-                      Opacity="0" Margin="0,2,0,2">
-                <Border.Background>
-                  <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
-                    <GradientStop Color="#FF55E1" Offset="0.0"/>
-                    <GradientStop Color="#FF0402" Offset="0.5"/>
-                    <GradientStop Color="#FFB402" Offset="1.0"/>
-                  </LinearGradientBrush>
-                </Border.Background>
+                      Opacity="0" Margin="0,2,0,2"
+                      Background="{StaticResource OmenBrandGradient}">
                 <Border.RenderTransform>
                   <TranslateTransform X="-15"/>
                 </Border.RenderTransform>
@@ -131,15 +125,7 @@
               </Trigger.ExitActions>
               <Setter Property="Foreground" Value="{DynamicResource NavItemForegroundActive}"/>
               <Setter TargetName="Bd" Property="Background" Value="{DynamicResource NavItemBackgroundHover}"/>
-              <Setter TargetName="Bd" Property="BorderBrush">
-                <Setter.Value>
-                  <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                    <GradientStop Color="#FF55E1" Offset="0.0"/>
-                    <GradientStop Color="#FF0402" Offset="0.5"/>
-                    <GradientStop Color="#FFB402" Offset="1.0"/>
-                  </LinearGradientBrush>
-                </Setter.Value>
-              </Setter>
+              <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource OmenBrandGradient}"/>
             </Trigger>
             <Trigger Property="IsMouseOver" Value="True">
               <Setter TargetName="Bd" Property="Background" Value="{DynamicResource NavItemBackgroundHover}"/>

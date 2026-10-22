@@ -73,18 +73,10 @@ namespace OmenSuperHub.Pages {
       OmenKeyAppPathText.Text = !string.IsNullOrEmpty(ConfigService.OmenKeyAppPath)
         ? ConfigService.OmenKeyAppPath : Strings.OmenKeyNoAppSelected;
       OsdToggle.IsChecked = ConfigService.ShowOsd;
-      LockKeyOsdToggle.IsChecked = ConfigService.LockKeyOsd;
       TrayHoverPopupToggle.IsChecked = ConfigService.TrayHoverPopup;
       OsdPositionPanel.Visibility = ConfigService.ShowOsd ? Visibility.Visible : Visibility.Collapsed;
-      LockKeyOsdPanel.Visibility = ConfigService.ShowOsd ? Visibility.Visible : Visibility.Collapsed;
-      switch (ConfigService.OsdPosition) {
-        case "topLeft": OsdPositionCombo.SelectedIndex = 1; break;
-        case "topRight": OsdPositionCombo.SelectedIndex = 2; break;
-        case "topCenter": OsdPositionCombo.SelectedIndex = 3; break;
-        case "bottomLeft": OsdPositionCombo.SelectedIndex = 4; break;
-        case "bottomRight": OsdPositionCombo.SelectedIndex = 5; break;
-        default: OsdPositionCombo.SelectedIndex = 0; break;
-      }
+      OsdKindsPanel.Visibility = ConfigService.ShowOsd ? Visibility.Visible : Visibility.Collapsed;
+      OsdPositionCombo.SelectedIndex = Array.IndexOf(OsdPositions, ConfigService.OsdPosition) is int i && i >= 0 ? i : 0;
       DataLocalizeToggle.IsChecked = ConfigService.DataLocalize == "on";
       DebugLogToggle.IsChecked = ConfigService.VerboseLogging;
       DebugShowAllUiToggle.IsChecked = ConfigService.DebugShowAllUi;
@@ -425,8 +417,18 @@ namespace OmenSuperHub.Pages {
       }
       OccStubRegBtn.IsEnabled = OccStubRmBtn.IsEnabled = false;
       LightStudioStatusText.Text = Strings.OccStubWorking;
-      string err = await System.Threading.Tasks.Task.Run(() => Services.OccStubService.Register());
-      OccStubRegBtn.IsEnabled = OccStubRmBtn.IsEnabled = true;
+      // ponytail: try/finally —— 按钮复位必须在 finally 里。OccStubService.Register 现在
+      // 内部兜底返回错误串,但一旦将来改为上抛,async void 的异常会被全局 handler 吞掉,
+      // 两个按钮就永久停在禁用态、状态行卡在"处理中"(R15/BUG-24 同款)。
+      string err;
+      try {
+        err = await System.Threading.Tasks.Task.Run(() => Services.OccStubService.Register());
+      } catch (Exception ex) {
+        Logger.Error($"OccStubReg: {ex.Message}");
+        err = ex.Message;
+      } finally {
+        OccStubRegBtn.IsEnabled = OccStubRmBtn.IsEnabled = true;
+      }
       if (err != null && LightStudioStatusText != null) LightStudioStatusText.Text = err;
       // ponytail: 失败时保留 err 文本 — RefreshLightStudioCard 的状态行会无条件覆盖它
       if (err == null) RefreshLightStudioCard();
@@ -435,8 +437,15 @@ namespace OmenSuperHub.Pages {
     async void OccStubRm_Click(object sender, RoutedEventArgs e) {
       OccStubRegBtn.IsEnabled = OccStubRmBtn.IsEnabled = false;
       LightStudioStatusText.Text = Strings.OccStubWorking;
-      string err = await System.Threading.Tasks.Task.Run(() => Services.OccStubService.Remove());
-      OccStubRegBtn.IsEnabled = OccStubRmBtn.IsEnabled = true;
+      string err;
+      try {
+        err = await System.Threading.Tasks.Task.Run(() => Services.OccStubService.Remove());
+      } catch (Exception ex) {
+        Logger.Error($"OccStubRm: {ex.Message}");
+        err = ex.Message;
+      } finally {
+        OccStubRegBtn.IsEnabled = OccStubRmBtn.IsEnabled = true;
+      }
       if (err != null && LightStudioStatusText != null) LightStudioStatusText.Text = err;
       if (err == null) RefreshLightStudioCard();
     }
@@ -500,14 +509,12 @@ namespace OmenSuperHub.Pages {
       Views.OsdWindow.RefreshMonitorState();
       if (!ConfigService.ShowOsd) Views.OsdWindow.Dismiss();
       OsdPositionPanel.Visibility = ConfigService.ShowOsd ? Visibility.Visible : Visibility.Collapsed;
-      LockKeyOsdPanel.Visibility = ConfigService.ShowOsd ? Visibility.Visible : Visibility.Collapsed;
+      OsdKindsPanel.Visibility = ConfigService.ShowOsd ? Visibility.Visible : Visibility.Collapsed;
     }
 
-    void LockKeyOsd_Changed(object sender, RoutedEventArgs e) {
-      if (_loading) return;
-      ConfigService.LockKeyOsd = LockKeyOsdToggle.IsChecked == true;
-      ConfigService.Save("LockKeyOsd");
-      // 已显示的锁定键 OSD 1.5s 自动淡出,无需 Dismiss。
+    void OsdKinds_Click(object sender, RoutedEventArgs e) {
+      var win = new OmenSuperHub.Views.OsdKindsWindow { Owner = Window.GetWindow(this) };
+      win.ShowDialog();
     }
 
     void TrayHoverPopup_Changed(object sender, RoutedEventArgs e) {
@@ -516,11 +523,16 @@ namespace OmenSuperHub.Pages {
       ConfigService.Save("TrayHoverPopup");
     }
 
+    // ponytail: 顺序必须与 XAML ComboBoxItem 一致,索引即选择项 —— 两个列表分处两文件,
+    // 靠这条注释 + 下面的往返自检兜住漂移。
+    static readonly string[] OsdPositions = {
+      "bottomRight", "bottomCenter", "bottomLeft", "topLeft", "topCenter", "topRight",
+    };
+
     void OsdPosition_SelectionChanged(object s, SelectionChangedEventArgs e) {
       if (_loading) return;
-      string[] positions = { "bottomCenter", "topLeft", "topRight", "topCenter", "bottomLeft", "bottomRight" };
       int idx = OsdPositionCombo.SelectedIndex;
-      ConfigService.OsdPosition = idx >= 0 && idx < positions.Length ? positions[idx] : "bottomCenter";
+      ConfigService.OsdPosition = idx >= 0 && idx < OsdPositions.Length ? OsdPositions[idx] : OsdPositions[0];
       ConfigService.Save("OsdPosition");
     }
 

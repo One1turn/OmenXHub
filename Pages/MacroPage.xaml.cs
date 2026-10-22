@@ -16,13 +16,12 @@ namespace OmenSuperHub.Pages {
     bool _capturingKey;
     Action<uint> _keyCaptureCallback;
     // ponytail: 主题刷子一次性缓存，避免每次 BuildMacroCard/ShowEditDialog 调 TryFindResource。
-    static Brush _cardBg, _textSec, _borderSubtle, _altCardBg;
+    static Brush _cardBg, _textSec, _borderSubtle;
     static bool _brushesCached;
     static void CacheBrushes(System.Windows.FrameworkElement fe) {
       if (_brushesCached) return;
       _cardBg = fe.TryFindResource("CardBackgroundFillColorDefaultBrush") as Brush
                 ?? System.Windows.Media.Brushes.White;
-      _altCardBg = _cardBg;
       _textSec = fe.TryFindResource("TextFillColorSecondaryBrush") as Brush
                  ?? System.Windows.Media.Brushes.Gray;
       _borderSubtle = fe.TryFindResource("BorderSubtleBrush") as Brush
@@ -39,12 +38,27 @@ namespace OmenSuperHub.Pages {
         AddMacroBtn.IsEnabled = ConfigService.MacroEnabled;
         RefreshList();
       };
-      Unloaded += (s, e) => { StopRecordingWatcher(); };
+      Unloaded += (s, e) => {
+        // ponytail: 录制中离开页面必须就地收尾 —— 否则钩子继续系统级吞掉所有按键（提示已随页
+        // 隐藏，只能盲按 ESC），且事件回调已退订、Save 永不执行，重启即丢录像。
+        // StopRecording 全部状态都在 UI 线程，这里调用安全。
+        UnsubscribeRecordingStopped();
+        if (MacroController.IsRecording) {
+          MacroController.StopRecording();
+          MacroService.Save();
+        }
+      };
+    }
+
+    // ponytail: 空态文案随总开关切换 —— 关闭时按钮禁用,原『点击上方添加』自相矛盾;改引批次5 的禁用提示。
+    void UpdateEmptyText() {
+      NoMacrosLabel.Text = ConfigService.MacroEnabled ? Strings.MacroNoMacros : Strings.MacroEmptyDisabled;
     }
 
     void RefreshList() {
       MacroList.Children.Clear();
       NoMacrosText.Visibility = Visibility.Collapsed;
+      UpdateEmptyText();
       var macros = MacroService.Macros;
       if (macros == null || macros.Count == 0) {
         NoMacrosText.Visibility = Visibility.Visible;
@@ -56,59 +70,23 @@ namespace OmenSuperHub.Pages {
     }
 
     FrameworkElement BuildMacroCard(MacroSequence m) {
-      var card = new Border {
-        Margin = new Thickness(0, 0, 0, 8),
-        CornerRadius = new CornerRadius(8),
-        Background = _cardBg,
-        Padding = new Thickness(12, 10, 12, 10)
+      // ponytail: 与 AutomationPage 的卡片同构 —— ui:CardControl + 头部两行(名称/触发键,
+      // 右列开关),按钮行放 Content。原实现手搓 Border(圆角/背景/内边距自维护)且开关在
+      // 头部第一列之外,和自动化卡片对不齐。
+      var card = new Wpf.Ui.Controls.CardControl {
+        Margin = new Thickness(0, 0, 0, 8)
       };
-      var sp = new StackPanel();
+      TextBlock recHint;
+      card.Header = BuildMacroHeader(m, out recHint);
 
-      var header = new Grid();
-      header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-      header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-      header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
-
-      var icon = new SymbolIcon { Symbol = SymbolRegular.Keyboard24, FontSize = 16, Margin = new Thickness(0, 0, 8, 0) };
-      Grid.SetColumn(icon, 0);
-      header.Children.Add(icon);
-
-      var namePanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
-      namePanel.Children.Add(new TextBlock {
-        Text = m.Name, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center,
-        Margin = new Thickness(0, 0, 6, 0), TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 200
-      });
-      string triggerName = MacroController.GetKeyName(m.TriggerKey);
-      namePanel.Children.Add(new TextBlock {
-        Text = "[" + triggerName + "]", FontSize = 11, VerticalAlignment = VerticalAlignment.Center,
-        Foreground = _textSec,
-        TextTrimming = TextTrimming.CharacterEllipsis
-      });
-      var recHint = new TextBlock {
-        Text = Strings.MacroRecordingCardHint, FontSize = 11, Margin = new Thickness(6, 0, 0, 0),
-        Foreground = System.Windows.Media.Brushes.OrangeRed, Visibility = Visibility.Collapsed
-      };
-      namePanel.Children.Add(recHint);
-      Grid.SetColumn(namePanel, 1);
-      header.Children.Add(namePanel);
-
-      var toggle = new ToggleSwitch {
-        IsChecked = m.Enabled, Tag = m, Margin = new Thickness(8, 0, 0, 0)
-      };
-      toggle.Checked += (s, e) => { m.Enabled = true; MacroService.Save(); };
-      toggle.Unchecked += (s, e) => { m.Enabled = false; MacroService.Save(); };
-      Grid.SetColumn(toggle, 2);
-      header.Children.Add(toggle);
-      sp.Children.Add(header);
-
-      var buttons = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(24, 8, 0, 0) };
+      var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
       var recordBtn = MakeBtn(Strings.MacroRecord, SymbolRegular.Record24, null);
       recordBtn.Click += (s, e) => {
         if (MacroController.IsRecording) return;
         MacroController.StartRecording(m, true);
         recHint.Visibility = Visibility.Visible;
         recordBtn.IsEnabled = false;
-        StartRecordingWatcher(m, recordBtn, recHint);
+        SubscribeRecordingStopped(recordBtn, recHint);
       };
       buttons.Children.Add(recordBtn);
       buttons.Children.Add(MakeBtn(Strings.MacroPlayTest, SymbolRegular.Play24, (s, e) => {
@@ -124,9 +102,58 @@ namespace OmenSuperHub.Pages {
           RefreshList();
         }
       }));
-      sp.Children.Add(buttons);
-      card.Child = sp;
+      card.Content = buttons;
       return card;
+    }
+
+    /// <summary>卡片头部:左列 名称 + [触发键] + 录制提示,右列 启用开关(RowSpan=2 居中)。
+    /// 名称与提示同排,与 AutomationPage 的「名称 + 触发器标签」节奏一致。</summary>
+    Grid BuildMacroHeader(MacroSequence m, out TextBlock recHint) {
+      var header = new Grid();
+      header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+      header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+      var namePanel = new StackPanel { Orientation = Orientation.Horizontal, VerticalAlignment = VerticalAlignment.Center };
+      namePanel.Children.Add(new TextBlock {
+        Text = m.Name, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center,
+        Margin = new Thickness(0, 0, 6, 0), TextTrimming = TextTrimming.CharacterEllipsis, MaxWidth = 200
+      });
+      string triggerName = MacroController.GetKeyName(m.TriggerKey);
+      namePanel.Children.Add(new TextBlock {
+        Text = "[" + triggerName + "]", FontSize = 11, VerticalAlignment = VerticalAlignment.Center,
+        Foreground = _textSec, TextTrimming = TextTrimming.CharacterEllipsis
+      });
+      recHint = new TextBlock {
+        Text = Strings.MacroRecordingCardHint, FontSize = 11, Margin = new Thickness(6, 0, 0, 0),
+        // ponytail: 录制警示色走主题资源(AccentRed),取不到回退原 Brushes.OrangeRed;不用 AccentOmen(暗色下是白,无警示感)
+        Foreground = TryFindResource("AccentRedBrush") as Brush ?? System.Windows.Media.Brushes.OrangeRed,
+        Visibility = Visibility.Collapsed
+      };
+      namePanel.Children.Add(recHint);
+      Grid.SetColumn(namePanel, 0);
+      header.Children.Add(namePanel);
+
+      var toggle = new ToggleSwitch {
+        IsChecked = m.Enabled, Tag = m, Margin = new Thickness(8, 0, 0, 0),
+        VerticalAlignment = VerticalAlignment.Center
+      };
+      toggle.Checked += (s, e) => {
+        // 与编辑对话框保存时同款冲突拦截。x.TriggerKey != 0 不可省 —— 对话框路径有
+        // m.TriggerKey != 0 外层守卫，这里没有，漏了会把无触发键的启用宏误判为冲突。
+        var conflict = MacroService.Macros.Find(
+          x => x != m && x.TriggerKey != 0 && x.TriggerKey == m.TriggerKey && x.Enabled);
+        if (conflict != null) {
+          DialogHelper.Warn(Strings.MacroTriggerConflict(conflict.Name), Strings.MacroTriggerConflictTitle);
+          toggle.IsChecked = false; // 触发 Unchecked → m.Enabled=false + Save，状态自洽
+          return;
+        }
+        m.Enabled = true;
+        MacroService.Save();
+      };
+      toggle.Unchecked += (s, e) => { m.Enabled = false; MacroService.Save(); };
+      Grid.SetColumn(toggle, 1);
+      header.Children.Add(toggle);
+      return header;
     }
 
     static Button MakeBtn(string text, Wpf.Ui.Controls.SymbolRegular icon, RoutedEventHandler click) {
@@ -141,30 +168,36 @@ namespace OmenSuperHub.Pages {
       return btn;
     }
 
-    // Recording watcher: ESC inside hook triggers StopRecording; we poll IsRecording
-    // to finalize Save + Refresh and restore the record button. Minimal overhead.
-    static System.Windows.Threading.DispatcherTimer _recWatcher;
-    static MacroPage _watcherPage;
-    void StartRecordingWatcher(MacroSequence m, Button recordBtn, TextBlock recHint) {
-      StopRecordingWatcher();
-      _watcherPage = this;
-      _recWatcher = new System.Windows.Threading.DispatcherTimer { Interval = TimeSpan.FromMilliseconds(50) };
-      _recWatcher.Tick += (s2, e2) => {
-        if (!MacroController.IsRecording) {
-          _recWatcher.Stop();
-          _recWatcher = null;
+    // 录制结束走 MacroController.RecordingStopped 事件，替代原 50ms DispatcherTimer 轮询。
+    // 事件可能在非 UI 线程触发（见 MacroController 事件注释），收尾统一切回 UI 线程。
+    Action _recStoppedHandler;
+
+    void SubscribeRecordingStopped(Button recordBtn, TextBlock recHint) {
+      UnsubscribeRecordingStopped();
+      Action handler = null;
+      handler = () => {
+        MacroController.RecordingStopped -= handler;
+        Application.Current?.Dispatcher.BeginInvoke(new Action(() => {
+          // 排队期间若已换页/开始新录制，_recStoppedHandler 已被替换或清空 —— 旧收尾必须
+          // 放弃，否则 RefreshList 会拆掉新录制卡，或操作已卸载页面。
+          if (_recStoppedHandler != handler) return;
+          _recStoppedHandler = null;
           recHint.Visibility = Visibility.Collapsed;
           recordBtn.IsEnabled = true;
           MacroService.Save();
-          _watcherPage?.RefreshList();
-          _watcherPage = null;
-        }
+          RefreshList();
+        }));
       };
-      _recWatcher.Start();
+      _recStoppedHandler = handler;
+      // 先 -= 再 +=（项目内事件订阅的幂等惯例）：重复订阅同一 handler 也只触发一次。
+      MacroController.RecordingStopped -= handler;
+      MacroController.RecordingStopped += handler;
     }
 
-    static void StopRecordingWatcher() {
-      if (_recWatcher != null) { _recWatcher.Stop(); _recWatcher = null; }
+    void UnsubscribeRecordingStopped() {
+      var h = _recStoppedHandler;
+      _recStoppedHandler = null;
+      if (h != null) MacroController.RecordingStopped -= h;
     }
 
     void AddMacro_Click(object sender, RoutedEventArgs e) {
@@ -190,15 +223,9 @@ namespace OmenSuperHub.Pages {
       root.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
       root.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-      var titleBar = new Border {
-        BorderBrush = _borderSubtle,
-        BorderThickness = new Thickness(0, 0, 0, 1), Padding = new Thickness(16, 12, 16, 12)
-      };
-      titleBar.Child = new StackPanel { Orientation = Orientation.Horizontal, Children = {
-        new SymbolIcon { Symbol = SymbolRegular.Keyboard24, FontSize = 16, Margin = new Thickness(0, 0, 8, 0) },
-        new TextBlock { Text = Strings.MacroEditTitle, FontSize = 14, FontWeight = FontWeights.SemiBold, VerticalAlignment = VerticalAlignment.Center }
-      }};
-      root.Children.Add(titleBar);
+      // ponytail: 原来手搓标题 Border —— ExtendsContentIntoTitleBar 已抹掉原生栏,那个 Border
+      // 既不能拖也没有系统关闭键。收口到 DialogHelper.MakeTitleBar。
+      root.Children.Add(OmenSuperHub.Utils.DialogHelper.MakeTitleBar(Strings.MacroEditTitle, SymbolRegular.Keyboard24));
 
       var scroll = new ScrollViewer { VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Margin = new Thickness(12, 8, 12, 0) };
       var fields = new StackPanel { Margin = new Thickness(0, 0, 0, 12) };
@@ -364,6 +391,9 @@ namespace OmenSuperHub.Pages {
         }
       };
       win.KeyDown += handler;
+      // 审查修复: 捕获中途直接关窗(点取消/标题栏)不复位 —— 残留的 _keyCaptureCallback
+      // 指向上一个宏对象,下个对话框里按第一个键会把触发键写进上一个宏并吞掉该按键。
+      win.Closed += (s, e) => { _capturingKey = false; _keyCaptureCallback = null; };
       return win.ShowDialog();
     }
 
@@ -372,6 +402,7 @@ namespace OmenSuperHub.Pages {
       ConfigService.Save("MacroEnabled");
       MacroController.SetEnabled(true);
       AddMacroBtn.IsEnabled = true;
+      UpdateEmptyText();
       // ponytail: 真装全局键盘钩子 (SetWindowsHookEx WH_KEYBOARD_LL)。Start 已加幂等守卫,
       // App 启动已 Start 过时这里是 no-op,关后再开是真正的新装。SetEnabled(_enabled=true)
       // 仍保留 —— 它只是钩子回调里"按键是否触发 PlayMacro"的开关,跟"装没装钩子"独立。
@@ -383,6 +414,7 @@ namespace OmenSuperHub.Pages {
       ConfigService.Save("MacroEnabled");
       MacroController.SetEnabled(false);
       AddMacroBtn.IsEnabled = false;
+      UpdateEmptyText();
       // ponytail: 真卸全局键盘钩子 (UnhookWindowsHookEx + 释放播放 CTS)。卸钩后再次 Start
       // 是真正重装。SetEnabled(false) 同时也关了"按键触发宏"的门,保证 Stop 之间最后一拍
       // 不会触发正在录制的宏。

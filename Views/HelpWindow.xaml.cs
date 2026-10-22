@@ -1,4 +1,4 @@
-// HelpWindow.xaml.cs - 帮助/关于对话框
+﻿// HelpWindow.xaml.cs - 帮助/关于对话框
 // 显示更新日志、功能指南、致谢信息、GitHub 链接和更新检查
 using System;
 using System.Diagnostics;
@@ -11,6 +11,8 @@ namespace OmenSuperHub.Views {
 
     public HelpWindow() {
       InitializeComponent();
+      // ponytail: 只读窗口,Esc 等同底栏「关闭」。
+      KeyDown += (s, e) => { if (e.Key == System.Windows.Input.Key.Escape) Close(); };
 
       // Version info
       var version = Assembly.GetExecutingAssembly().GetName().Version;

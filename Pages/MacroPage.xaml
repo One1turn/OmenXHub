@@ -4,9 +4,9 @@
       xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
       xmlns:app="clr-namespace:OmenSuperHub"
       Title="{x:Static app:Strings.PageMacro}">
-  <ScrollViewer VerticalScrollBarVisibility="Auto">
-    <StackPanel Margin="24,20" TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
-      <TextBlock Text="{x:Static app:Strings.MacroHeading}" FontSize="22" FontWeight="Bold" Margin="0,0,0,16"/>
+  <ScrollViewer Style="{DynamicResource OmenScrollViewer}" VerticalScrollBarVisibility="Auto">
+    <StackPanel Margin="{DynamicResource PageMargin}" TextElement.Foreground="{DynamicResource TextPrimaryBrush}">
+      <TextBlock Text="{x:Static app:Strings.MacroHeading}" FontSize="{DynamicResource FontSizePageTitle}" FontWeight="Medium" Margin="0,0,0,16"/>
 
       <ui:CardControl Margin="{StaticResource CardMargin}">
         <ui:CardControl.Header>
@@ -18,7 +18,7 @@
               </Grid.ColumnDefinitions>
               <StackPanel Orientation="Horizontal">
                 <ui:SymbolIcon Symbol="Keyboard24" FontSize="{DynamicResource FontSizeHeader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <TextBlock x:Name="MacroEnabledText" Text="{x:Static app:Strings.MacroEnabled}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+                <TextBlock x:Name="MacroEnabledText" Text="{x:Static app:Strings.MacroEnabled}" FontWeight="SemiBold" VerticalAlignment="Center" FontSize="{DynamicResource FontSizeTitle}"/>
               </StackPanel>
               <ui:ToggleSwitch Grid.Column="1" x:Name="MacroMasterToggle"
                                Checked="MacroMasterToggle_Checked" Unchecked="MacroMasterToggle_Unchecked"/>
@@ -29,28 +29,31 @@
         </ui:CardControl.Header>
       </ui:CardControl>
 
-      <StackPanel Margin="0,0,0,0">
-        <Grid>
-          <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="*"/>
-            <ColumnDefinition Width="Auto"/>
-          </Grid.ColumnDefinitions>
+      <!-- ponytail: 与 AutomationPage 同构(参考 LenovoLegionToolkit):分区标题不套卡片,
+           列表 → 居中空态 → 右对齐 Primary「添加宏」。原实现标题行右侧挂按钮、
+           空态左对齐挤在列表下方,两页节奏不一致。 -->
+      <StackPanel Margin="0,16,0,12">
+        <TextBlock Text="{x:Static app:Strings.MacroListHeading}" FontSize="{DynamicResource FontSizeSubheader}"
+                   FontWeight="SemiBold"/>
+        <TextBlock Text="{x:Static app:Strings.MacroListDesc}" FontSize="{DynamicResource FontSizeBody}"
+                   Foreground="{DynamicResource TextFillColorSecondaryBrush}" Margin="0,4,0,0"/>
+      </StackPanel>
+
+      <StackPanel x:Name="MacroList"/>
+
+      <StackPanel x:Name="NoMacrosText" Margin="0,16,0,16" HorizontalAlignment="Center" Visibility="Visible">
+        <TextBlock x:Name="NoMacrosLabel" Text="{x:Static app:Strings.MacroNoMacros}"
+                   FontSize="{DynamicResource FontSizeBody}" FontWeight="Medium" TextAlignment="Center"
+                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"/>
+      </StackPanel>
+
+      <StackPanel Margin="0,8,0,0" HorizontalAlignment="Right">
+        <ui:Button x:Name="AddMacroBtn" MinWidth="120" Appearance="Primary" Click="AddMacro_Click">
           <StackPanel Orientation="Horizontal">
-            <ui:SymbolIcon Symbol="Keyboard24" FontSize="{DynamicResource FontSizeSubheader}" VerticalAlignment="Center" Margin="0,0,8,0"/>
-            <TextBlock Text="{x:Static app:Strings.MacroListHeading}" FontSize="{DynamicResource FontSizeTitle}" FontWeight="SemiBold" VerticalAlignment="Center"/>
+            <ui:SymbolIcon Symbol="Add24" FontSize="{DynamicResource FontSizeBody}" Margin="0,0,4,0"/>
+            <TextBlock Text="{x:Static app:Strings.MacroAddMacro}" VerticalAlignment="Center"/>
           </StackPanel>
-          <Button x:Name="AddMacroBtn" Grid.Column="1" MinWidth="90" Height="30"
-                  Padding="10,0" FontSize="{DynamicResource FontSizeBody}" Click="AddMacro_Click">
-            <StackPanel Orientation="Horizontal">
-              <ui:SymbolIcon Symbol="Add24" FontSize="{DynamicResource FontSizeBody}" Margin="0,0,4,0"/>
-              <TextBlock Text="{x:Static app:Strings.MacroAddMacro}" VerticalAlignment="Center"/>
-            </StackPanel>
-          </Button>
-        </Grid>
-        <StackPanel x:Name="MacroList"/>
-        <TextBlock x:Name="NoMacrosText" Text="{x:Static app:Strings.MacroNoMacros}" FontSize="{DynamicResource FontSizeBody}"
-                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
-                   Margin="0,8,0,0" Visibility="Visible"/>
+        </ui:Button>
       </StackPanel>
 
     </StackPanel>

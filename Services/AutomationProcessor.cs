@@ -18,6 +18,19 @@ using OmenSuperHub.Pages;
 namespace OmenSuperHub.Services {
   internal static class AutomationProcessor {
     public static event Action<string> ExecutionStatusChanged;
+    // ponytail: 事件统一经 UI 线程分发 —— drain 跑在线程池线程,原 169 行直接 Invoke 而 184 行
+    // 却 marshal(风格不一致);当前唯一订阅者自行 InvokeAsync 故未爆,但"订阅者须自 marshal"是
+    // 隐式契约,新增假定 UI 线程的订阅者即中招。与 ConfigService.FirePresetCycled 同范本收口;
+    // BeginInvoke 异步避免嵌套死锁(触发器回调里再等 UI 的场景)。
+    static void FireExecutionStatus(string name) {
+      try {
+        var app = System.Windows.Application.Current;
+        if (app != null && app.Dispatcher != null && !app.Dispatcher.CheckAccess())
+          app.Dispatcher.BeginInvoke(new System.Action(() => ExecutionStatusChanged?.Invoke(name)));
+        else
+          ExecutionStatusChanged?.Invoke(name);
+      } catch { }
+    }
     private static bool _running;
     private static Timer _processPollTimer;
     // ponytail: 进程状态按「镜像名 → 存活 PID 集合」追踪,而非布尔值。
@@ -166,7 +179,7 @@ namespace OmenSuperHub.Services {
       try {
         while (_running && _pendingPipelines.TryDequeue(out var pipeline)) {
           lock (ExecLock) { _executing = true; _currentPipelineName = pipeline.Name; }
-          ExecutionStatusChanged?.Invoke(pipeline.Name);
+          FireExecutionStatus(pipeline.Name);
           try {
             foreach (var step in pipeline.Steps) {
               if (step.DelayMs > 0)
@@ -177,14 +190,8 @@ namespace OmenSuperHub.Services {
             Logger.Error("AutomationProcessor.ExecutePipeline error: " + ex.Message);
           } finally {
             lock (ExecLock) { _executing = false; _currentPipelineName = null; }
-            // ponytail: marshal to UI thread for anyone subscribing from XAML/code-behind
-            try {
-              var app = System.Windows.Application.Current;
-              if (app != null && app.Dispatcher != null && !app.Dispatcher.CheckAccess())
-                app.Dispatcher.Invoke(() => ExecutionStatusChanged?.Invoke(null));
-              else
-                ExecutionStatusChanged?.Invoke(null);
-            } catch { }
+            // ponytail: 统一经 FireExecutionStatus(UI 线程分发,内含 try)。
+            FireExecutionStatus(null);
           }
         }
       } finally {
@@ -205,7 +212,7 @@ namespace OmenSuperHub.Services {
           break;
         case "SetRefreshRate":
           if (int.TryParse(step.Value, out int rr) && rr >= 30 && rr <= 360) {
-            ApplyRefreshRate(rr);
+            TrayService.ApplyRefreshRate(null, rr);
             ConfigService.RefreshRate = rr;      // ponytail: 同步+持久化,否则重启恢复旧值
             ConfigService.Save("RefreshRate");
             Views.OsdWindow.ShowRefreshRateOsd(rr);
@@ -213,10 +220,16 @@ namespace OmenSuperHub.Services {
           break;
         case "SetPowerPlan":
           if (!string.IsNullOrEmpty(step.Value)) {
-            Guid g = Guid.Parse(step.Value);
-            NativeMethods_Power.PowerSetActiveScheme(IntPtr.Zero, ref g);
-            ConfigService.PowerPlanGuid = step.Value;   // ponytail: 同步+持久化
-            ConfigService.Save("PowerPlanGuid");
+            // ponytail: 裸 Guid.Parse 遇手改/坏 JSON 值抛 FormatException,被 DrainPipelines 的
+            // 外层 try 捕获 → 该管道"剩余全部步骤"一起中止。改 TryParse 失败记日志跳过本步
+            //(同上面 SetRefreshRate 的 TryParse 降级先例)。
+            if (Guid.TryParse(step.Value, out Guid g)) {
+              NativeMethods_Power.PowerSetActiveScheme(IntPtr.Zero, ref g);
+              ConfigService.PowerPlanGuid = step.Value;   // ponytail: 同步+持久化
+              ConfigService.Save("PowerPlanGuid");
+            } else {
+              Logger.Warn("Automation SetPowerPlan: 无效 GUID,跳过该步: " + step.Value);
+            }
           }
           break;
         case "SetPowerMode":
@@ -307,6 +320,14 @@ namespace OmenSuperHub.Services {
       ConfigService.Save("PowerMode");
     }
 
+    // ponytail: 自动化 Value 与 ConfigService.CpuPower 同款 "N W" 显示格式，解析对齐 PresetManager
+    // 的 Replace(" W","") 惯例 —— 旧裸 int.TryParse 使编辑器 combo 存的 "65 W" 永远静默失效。
+    internal static int? ParseCpuPowerWatts(string value) {
+      if (string.IsNullOrEmpty(value)) return null;
+      string v = value.Trim().Replace(" W", "").Trim();
+      return int.TryParse(v, out int w) && w >= 10 && w <= 254 ? (int?)w : null;
+    }
+
     static void ExecuteSetCpuPower(string value) {
       if (value == "max") {
         // ponytail: 同步 ConfigService 三字段 + 持久化 —— 否则硬件短暂降频后,下次
@@ -319,7 +340,7 @@ namespace OmenSuperHub.Services {
         ConfigService.Save("CpuPowerPl2");
         OmenHardware.SetCpuPowerLimit(254);
         Views.OsdWindow.ShowCpuPowerOsd("max");
-      } else if (int.TryParse(value, out int cpuVal) && cpuVal >= 10 && cpuVal <= 254) {
+      } else if (ParseCpuPowerWatts(value) is int cpuVal) {
         ConfigService.CpuPower = cpuVal + " W";
         ConfigService.CpuPowerPl1 = cpuVal;
         ConfigService.CpuPowerPl2 = cpuVal;
@@ -337,7 +358,12 @@ namespace OmenSuperHub.Services {
         ConfigService.FanControl = "";
         FanService.LoadFanConfig(value + ".txt");
         SetMaxFanSpeedOff();
-        TrayService.fanControlTimer.Change(0, 1000);
+        // ponytail: fanControlTimer 在 TrayService.StartTimers()(:595)才创建,而 App.xaml.cs:229
+        // 把它排在 Background 优先级、且要等 ThreadPool 里 LibreComputer.Open() 跑完才入队;
+        // 本类的 Startup 触发器(:99,由 App.xaml.cs:259 ReevaluateBackendNeeded→Start 到达)是
+        // Normal 优先级,会在 timer 建好之前开火。少 ?. 就是 NRE,被 DrainPipelines(:189)吞成
+        // 一条日志并中止该管道后续步骤 —— 用户侧只看到"自动化没生效"(issue #20)。
+        TrayService.fanControlTimer?.Change(0, 1000);
         Views.OsdWindow.ShowFanModeOsd(value);
       } else if (value == "smart" || value == "custom") {
         ConfigService.FanControl = "smart";
@@ -347,7 +373,7 @@ namespace OmenSuperHub.Services {
           : "silent.txt");
         FanService.InitSmartFanState(ConfigService.SmartFanEmaAlpha);
         SetMaxFanSpeedOff();
-        TrayService.fanControlTimer.Change(0, 1000);
+        TrayService.fanControlTimer?.Change(0, 1000);
         Views.OsdWindow.ShowFanModeOsd("smart");
       } else if (value != null && value.StartsWith("json:")) {
         string json = value.Substring(5);
@@ -356,7 +382,7 @@ namespace OmenSuperHub.Services {
           ConfigService.FanControl = "smart";
           FanService.ApplyCustomCurve(result.Value.points);
           SetMaxFanSpeedOff();
-          TrayService.fanControlTimer.Change(0, 1000);
+          TrayService.fanControlTimer?.Change(0, 1000);
           Views.OsdWindow.ShowFanModeOsd("custom");
         }
       } else if (value != null && value.StartsWith("manual")) {
@@ -370,7 +396,16 @@ namespace OmenSuperHub.Services {
           SetMaxFanSpeedOff();
           OmenHardware.SetFanLevel(pct, pct, fan3: OmenHardware.IsThreeFan());
           Views.OsdWindow.ShowFanModeOsd(pct + "%");
-          TrayService.fanControlTimer.Change(Timeout.Infinite, Timeout.Infinite);
+          // ponytail: 停表是 manual 档的不变式 —— 不停则 tick 的 else 分支每秒用曲线值
+          // 覆盖手动档(FanControl="45%" 落不进 tick 的 smart/custom 分支)。Startup 触发器
+          // 可在 timer 建好前到达(见上方注释),此时停不掉:留日志而不是静默,让"手动档
+          // 开机后被曲线接管"这个短暂窗口可诊断;手动档已由上方 SetFanLevel 写入 EC,
+          // timer 首拍 100ms 后的确会接管 —— 该窗口的根治要靠启动序(timer 先于 Automation
+          // 初始化),超出本方法职责。
+          if (TrayService.fanControlTimer != null)
+            TrayService.fanControlTimer.Change(Timeout.Infinite, Timeout.Infinite);
+          else
+            Logger.Warn("[Automation] SetFanMode manual: fanControlTimer 未就绪,手动档可能在 ~100ms 内被 tick 接管");
         }
       }
       // ponytail: 自动化改风扇模式后持久化 —— 与 FanPage 写回路径一致,否则风速模式
@@ -419,19 +454,24 @@ namespace OmenSuperHub.Services {
       }
     }
 
-    // ponytail: 内存清理 — 纯后端,遍历进程 trim 工作集。与 DashboardPage.CleanMemory_Click
-    // 同一动作,但无 UI 依赖(自动化触发无需主界面/仪表盘可见)。EmptyWorkingSet 逐进程调用。
+    // ponytail: 内存清理 — 唯一实现,遍历进程 trim 工作集。调用方: 仪表盘「一键清理」/
+    // 自动化「清理内存」步 / HTTP API POST /api/memory/clean。EmptyWorkingSet 逐进程调用。
+    // 返回释放字节数(负值钳到 0)。无 UI 依赖,秒级批量操作应由调用方丢后台线程。
+    public static long CleanMemory() {
+      var before = NativeMethods_Proc.GetMemoryStatus();
+      ulong usedBefore = before.ullTotalPhys - before.ullAvailPhys;
+      foreach (var proc in Process.GetProcesses()) {
+        try { using (proc) NativeMethods_Proc.EmptyWorkingSet(proc.Handle); } catch { }
+      }
+      var after = NativeMethods_Proc.GetMemoryStatus();
+      ulong usedAfter = after.ullTotalPhys - after.ullAvailPhys;
+      long freed = (long)(usedBefore - usedAfter);
+      return freed < 0 ? 0 : freed;
+    }
+
     static void ExecuteCleanMemory() {
       try {
-        var before = NativeMethods_Proc.GetMemoryStatus();
-        ulong usedBefore = before.ullTotalPhys - before.ullAvailPhys;
-        foreach (var proc in Process.GetProcesses()) {
-          try { using (proc) NativeMethods_Proc.EmptyWorkingSet(proc.Handle); } catch { }
-        }
-        var after = NativeMethods_Proc.GetMemoryStatus();
-        ulong usedAfter = after.ullTotalPhys - after.ullAvailPhys;
-        long freed = (long)(usedBefore - usedAfter);
-        if (freed < 0) freed = 0;
+        long freed = CleanMemory();
         Logger.Info($"Automation CleanMemory: freed {(freed / 1024.0 / 1024.0):F1} MB");
       } catch (Exception ex) {
         Logger.Error("Automation CleanMemory failed: " + ex.Message);
@@ -451,9 +491,11 @@ namespace OmenSuperHub.Services {
       // 规范路径还覆盖 PL1/PL2 独立写入、自定义预设 1.2 参数与按预设风扇曲线。
       // ponytail: 改为 await —— 多步骤 pipeline 连发时,确保 SetPreset 把 GPU/CPU 功率
       // 真正写入完,再跑下一步的 SetGpuPower/SetCpuPower,否则后写者可能反向覆盖前者。
-      await PresetManager.AwaitableApplyPresetHardware();
-
-      Views.OsdWindow.ShowPresetOsd(preset);
+      var failedSteps = await PresetManager.AwaitableApplyPresetHardware();
+      // 部分应用时失败 OSD 已由 PresetManager 单点弹出,这里不再叠加"预设已应用"的误导
+      // 成功提示。FirePresetCycled 照常同步 UI(预设状态是切换成功才走到这步的)。
+      if (failedSteps.Length == 0)
+        Views.OsdWindow.ShowPresetOsd(preset);
       ConfigService.FirePresetCycled(preset);
     }
 
@@ -461,20 +503,6 @@ namespace OmenSuperHub.Services {
     // 不阻塞 HTTP 处理线。语义与旧 void 一致:触发后不等硬件写完即返回。
     internal static void ApplyPreset(string preset) {
       _ = ApplyPresetAsync(preset);
-    }
-
-    private static void ApplyRefreshRate(int hz) {
-      var dm = new NativeMethods_Display.DEVMODE();
-      dm.dmSize = (short)System.Runtime.InteropServices.Marshal.SizeOf(typeof(NativeMethods_Display.DEVMODE));
-      if (!NativeMethods_Display.EnumDisplaySettings(null, NativeMethods_Display.ENUM_CURRENT_SETTINGS, ref dm)) return;
-      int prevHz = dm.dmDisplayFrequency;
-      dm.dmDisplayFrequency = hz;
-      dm.dmFields = NativeMethods_Display.DM_DISPLAYFREQUENCY;
-      int ret = NativeMethods_Display.ChangeDisplaySettings(ref dm, 0);
-      if (ret != 0) {
-        dm.dmDisplayFrequency = prevHz;
-        NativeMethods_Display.ChangeDisplaySettings(ref dm, 0);
-      }
     }
 
     // ── Hotkey support ──
@@ -520,9 +548,12 @@ namespace OmenSuperHub.Services {
       return mods;
     }
 
-    static Key HotkeyStringToKey(string hotkey) {
+    internal static Key HotkeyStringToKey(string hotkey) {
       string[] parts = hotkey.Split('+');
       string keyName = parts[parts.Length - 1].Trim();
+      // ponytail: Enum.Parse 对纯数字串按枚举值解析 ("1"→Key.Cancel),数字键必须先走 FriendlyToKey,
+      // 否则数字热键 (Ctrl+1 等) 注册成完全错误的 VK
+      if (keyName.Length == 1 && char.IsDigit(keyName[0])) return FriendlyToKey(keyName);
       try { return (Key)Enum.Parse(typeof(Key), keyName, ignoreCase: true); } catch { }
       return FriendlyToKey(keyName);
     }
@@ -552,6 +583,8 @@ namespace OmenSuperHub.Services {
     public static void RefreshHotkeys() {
       if (!_running) return;
       InitHotkeyHwnd();
+      // ponytail: 主窗 HWND 未就绪时 InitHotkeyHwnd 会静默 return 不赋值,下面直接 .Handle 会 NRE
+      if (_hotkeyHwndSource == null) return;
       UnregisterAllHotkeys();
       if (_registeredHotkeys == null) _registeredHotkeys = new System.Collections.Concurrent.ConcurrentDictionary<int, string>();
       IntPtr hwnd = _hotkeyHwndSource.Handle;
@@ -574,6 +607,77 @@ namespace OmenSuperHub.Services {
         }
       }
       if (nextId > 1) Logger.Info($"Hotkeys: registered {_registeredHotkeys.Count} shortcut(s)");
+    }
+
+    // ponytail: 热键冲突纯函数 —— 后注册的 RegisterHotKey 失败仅留一行日志,用户无感知;
+    // 同流水线内重复同样注册不上,一并拦截。编辑器 SaveBtn_Click 调用,SelfCheck 直测。
+    internal static AutomationPipeline FindHotkeyConflict(AutomationPipeline self, IEnumerable<AutomationPipeline> others) {
+      self.EnsureTriggers();
+      for (int i = 0; i < self.Triggers.Count; i++) {
+        var t = self.Triggers[i];
+        if (!t.Enabled || t.Type != "Hotkey" || string.IsNullOrEmpty(t.Value)) continue;
+        for (int j = i + 1; j < self.Triggers.Count; j++) {
+          var t2 = self.Triggers[j];
+          if (t2.Enabled && t2.Type == "Hotkey" && string.Equals(t2.Value, t.Value, StringComparison.OrdinalIgnoreCase))
+            return self;
+        }
+        foreach (var p in others) {
+          if (p == null || ReferenceEquals(p, self) || !p.Enabled) continue;
+          p.EnsureTriggers();   // 与 MatchesTrigger 同款归一化,防手改 JSON 的 null Triggers
+          foreach (var t2 in p.Triggers) {
+            if (t2.Enabled && t2.Type == "Hotkey" && string.Equals(t2.Value, t.Value, StringComparison.OrdinalIgnoreCase))
+              return p;
+          }
+        }
+      }
+      return null;
+    }
+
+    // ── Self check (--selftest) ──
+    // ponytail: 只测纯函数,不写任何硬件/配置 —— --selftest 路径不跑 AutomationService.Initialize,
+    // Pipelines 为 null,下面两条快照断言正是覆盖这个空态(坏值/空态必须降级,不外抛)。
+
+    internal static string SelfCheck() {
+      var fails = new List<string>();
+      // ParseCpuPowerWatts 契约: 自动化 Value 与 ConfigService 同款 "N W" 显示格式
+      if (ParseCpuPowerWatts("65 W") != 65) fails.Add("ParseCpuPowerWatts(\"65 W\") != 65");
+      if (ParseCpuPowerWatts("65") != 65) fails.Add("ParseCpuPowerWatts(\"65\") != 65");
+      if (ParseCpuPowerWatts("max") != null) fails.Add("ParseCpuPowerWatts(\"max\") should be null");
+      if (ParseCpuPowerWatts("abc") != null) fails.Add("ParseCpuPowerWatts(\"abc\") should be null");
+      if (ParseCpuPowerWatts("5") != null) fails.Add("ParseCpuPowerWatts(\"5\") should be null (<10)");
+      if (ParseCpuPowerWatts("300") != null) fails.Add("ParseCpuPowerWatts(\"300\") should be null (>254)");
+      // 热键字符串解析: 录制器字母表 (数字键/OEM 标点) 必须能解析,否则注册端静默丢弃
+      if (HotkeyStringToKey("Ctrl+Shift+F5") != Key.F5) fails.Add("HotkeyStringToKey(Ctrl+Shift+F5) != F5");
+      if (HotkeyStringToKey("Ctrl+1") != Key.D1) fails.Add("HotkeyStringToKey(Ctrl+1) != D1");
+      if (HotkeyStringToKey("Ctrl+.") != Key.OemPeriod) fails.Add("HotkeyStringToKey(Ctrl+.) != OemPeriod");
+      if (HotkeyStringToKey("Alt+/") != Key.OemQuestion) fails.Add("HotkeyStringToKey(Alt+/) != OemQuestion");
+      // 冲突检查: 同流水线内重复 / 跨流水线重复命中; 禁用流水线不命中
+      var dup = new AutomationPipeline { Name = "A", Triggers = { new AutomationTrigger("Hotkey", "Ctrl+F1"), new AutomationTrigger("Hotkey", "Ctrl+F1") } };
+      if (FindHotkeyConflict(dup, new List<AutomationPipeline>()) != dup)
+        fails.Add("intra-pipeline hotkey duplicate not detected");
+      var solo = new AutomationPipeline { Name = "A", Triggers = { new AutomationTrigger("Hotkey", "Ctrl+F2") } };
+      var other = new AutomationPipeline { Name = "B", Triggers = { new AutomationTrigger("Hotkey", "ctrl+f2") } };
+      if (FindHotkeyConflict(solo, new List<AutomationPipeline> { other }) != other)
+        fails.Add("cross-pipeline hotkey conflict not detected");
+      var disabled = new AutomationPipeline { Name = "C", Enabled = false, Triggers = { new AutomationTrigger("Hotkey", "Ctrl+F2") } };
+      if (FindHotkeyConflict(solo, new List<AutomationPipeline> { disabled }) != null)
+        fails.Add("disabled pipeline should not conflict");
+      // #15 SetPowerPlan 坏值回归: 旧版裸 Guid.Parse 抛 FormatException,被 DrainPipelines 外层
+      // try 捕获 → 该管道剩余步骤全灭。新版必须"记日志跳过本步"且不外抛(坏值分支不碰任何系统调用)。
+      try {
+        ExecuteStep(new AutomationStep { Type = "SetPowerPlan", Value = "not-a-guid" })
+            .GetAwaiter().GetResult();
+      } catch (Exception ex) {
+        fails.Add("SetPowerPlan invalid GUID should be skipped, not thrown: " + ex.GetType().Name);
+      }
+      // #14 快照读点空态回归: 轮询线程在 Pipelines 未初始化/为 null 时必须拿到空列表而非 NRE。
+      try {
+        if (AutomationService.GetEnabledPipelines() == null) fails.Add("GetEnabledPipelines returned null");
+        if (AutomationService.GetQuickActions() == null) fails.Add("GetQuickActions returned null");
+      } catch (Exception ex) {
+        fails.Add("AutomationService snapshot getter threw: " + ex.GetType().Name);
+      }
+      return fails.Count == 0 ? "PASS AutomationSelfCheck" : "FAIL AutomationSelfCheck: " + string.Join("; ", fails);
     }
 
     // ── Trigger detection ──
@@ -737,10 +841,11 @@ namespace OmenSuperHub.Services {
       if (!_running) return;
       try {
         float cpuTemp = HardwareService.CPUTemp;
-        float gpuTemp = HardwareService.GPUTemp;
-        bool tempChanged = Math.Abs(cpuTemp - _lastCpuTemp) > 0.5f || Math.Abs(gpuTemp - _lastGpuTemp) > 0.5f;
+        bool gpuTempFresh = HardwareService.TryGetFreshGpuTemp(out float gpuTemp);
+        bool tempChanged = Math.Abs(cpuTemp - _lastCpuTemp) > 0.5f
+          || (gpuTempFresh && Math.Abs(gpuTemp - _lastGpuTemp) > 0.5f);
         _lastCpuTemp = cpuTemp;
-        _lastGpuTemp = gpuTemp;
+        if (gpuTempFresh) _lastGpuTemp = gpuTemp;
         if (tempChanged) {
           foreach (var p in AutomationService.GetEnabledPipelines()) {
             // ponytail: GetEnabledPipelines() 已对每个 pipeline 调 EnsureTriggers()，无需重复。
@@ -756,7 +861,7 @@ namespace OmenSuperHub.Services {
                 } else if (!above && cpuTemp < cpuThresh - 2) {
                   _tempTriggerFired.Remove(latchKey);
                 }
-              } else if (t.Type == "GpuTempAbove" && int.TryParse(t.Value, out int gpuThresh)) {
+              } else if (t.Type == "GpuTempAbove" && gpuTempFresh && int.TryParse(t.Value, out int gpuThresh)) {
                 bool above = gpuTemp >= gpuThresh;
                 if (above && !_tempTriggerFired.Contains(latchKey)) {
                   _tempTriggerFired.Add(latchKey);

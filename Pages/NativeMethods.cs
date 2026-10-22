@@ -215,6 +215,25 @@ namespace OmenSuperHub.Pages {
     public const uint INFO_SET_ADVANCED_COLOR = 10;
     public const uint INFO_GET_DPI_SCALE = unchecked((uint)-3);
     public const uint INFO_SET_DPI_SCALE = unchecked((uint)-4);
+
+    /// <summary>关闭显示器(SC_MONITORPOWER 的 lParam: -1=开, 1=低功耗, 2=关)。唯一实现,
+    /// 调用方: PerfPage「关闭显示器」按钮 / HTTP API POST /api/system/display/off。
+    /// 优先用主窗口句柄(与 PerfPage 原实现同路径), 无窗口(托盘态)时退回 HWND_BROADCAST;
+    /// 非 UI 线程自动 marshal。任何键鼠输入即唤醒, 无损可逆。</summary>
+    public static void TurnOffDisplay() {
+      var app = System.Windows.Application.Current;
+      if (app != null && !app.Dispatcher.CheckAccess()) {
+        try { app.Dispatcher.Invoke(new System.Action(TurnOffDisplay)); return; } catch { }
+      }
+      IntPtr hwnd = IntPtr.Zero;
+      try {
+        var w = System.Windows.Application.Current != null ? System.Windows.Application.Current.MainWindow : null;
+        if (w != null) hwnd = new System.Windows.Interop.WindowInteropHelper(w).Handle;
+      } catch { }
+      if (hwnd == IntPtr.Zero) hwnd = new IntPtr(0xFFFF);  // HWND_BROADCAST
+      SendMessage(hwnd, WM_SYSCOMMAND, (IntPtr)SC_MONITORPOWER, (IntPtr)2);
+    }
+
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
     public struct DEVMODE {
       [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)] public string dmDeviceName;

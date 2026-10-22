@@ -137,11 +137,16 @@ namespace OmenSuperHub.Services {
     public static string AccentColorSource = "system";
     public static string AccentColor = "#FFFFFFFF";
     public static bool Topmost = true;
+    // ponytail: 主窗口几何记忆 —— 用户调过的尺寸/位置/最大化状态下次启动还原。
+    // 0 = 未保存过(走默认 1150×750 居中)。double 存 DIP,与 WPF 坐标同单位。
+    public static double WinLeft, WinTop, WinWidth, WinHeight;
+    public static bool WinMaximized;
     public static bool ShowOsd = true;
-    // ponytail: 数字/大写锁定提示单独开关 —— issue #33: 与 HP System Event Utility
-    // 自带的数字键盘切换提示重叠且惠普无关闭选项,用户要求本侧可单独关。
-    public static bool LockKeyOsd = true;
-    public static string OsdPosition = "bottomCenter";
+    // ponytail: 按类型关闭 OSD —— 逗号分隔的 kind 列表(见 OsdWindow.Kind*)。空 = 全部开启。
+    // 取代旧的单一 LockKeyOsd 布尔(issue #33 只覆盖锁定键),现在 8 类提示各自可关。
+    // 存字符串而非 8 个 bool: 新增类型不用再加注册表键,老键 LockKeyOsd 在 Load 时一次性迁移。
+    public static string OsdMutedKinds = "";
+    public static string OsdPosition = "bottomRight";
     public static bool TrayHoverPopup = true;
     public static bool EcoQosEnabled = false;
     public static bool EcoQosThrottlePlugged = false;
@@ -153,6 +158,11 @@ namespace OmenSuperHub.Services {
     public static bool HWiNFOEnabled = false;
     public static bool HWiNFOReadEnabled = false;    // 从 HWiNFO64 读取传感器数据
     public static bool HttpApiEnabled = false;
+    // ponytail: LAN 监听是安全边界,默认关闭 —— 关时不改绑定(仍 localhost),零回归。
+    public static bool LanAccessEnabled = false;
+    // 令牌: 持久化模式下存注册表(重启不变,客户端只配一次);空串=下次 Start 生成。
+    public static string HttpApiToken = "";
+    public static bool HttpApiPersistentToken = true;
     // ponytail: 新装/从未碰过这两项开关的用户,默认关闭总开关、App 不 Start 后端
     // (自动化 = WMI Win32_ProcessStartTrace watcher + 系统事件订阅 + 全局热键注册;
     //  宏 = 全局低级键盘钩子 SetWindowsHookEx WH_KEYBOARD_LL — 装上即兜得住所有
@@ -244,7 +254,7 @@ namespace OmenSuperHub.Services {
           if (string.IsNullOrEmpty(setting)) {
             key.SetValue("Preset", Preset);
             key.SetValue("ShowOsd", ShowOsd);
-            key.SetValue("LockKeyOsd", LockKeyOsd);
+            key.SetValue("OsdMutedKinds", OsdMutedKinds ?? "");
             key.SetValue("Topmost", Topmost);
             key.SetValue("SysManufacturer", SysManufacturer);
             key.SetValue("SysModel", SysModel);
@@ -352,6 +362,9 @@ namespace OmenSuperHub.Services {
             case "HWiNFOEnabled": key.SetValue("HWiNFOEnabled", HWiNFOEnabled); break;
             case "HWiNFOReadEnabled": key.SetValue("HWiNFOReadEnabled", HWiNFOReadEnabled); break;
             case "HttpApiEnabled": key.SetValue("HttpApiEnabled", HttpApiEnabled); break;
+            case "LanAccessEnabled": key.SetValue("LanAccessEnabled", LanAccessEnabled); break;
+            case "HttpApiToken": key.SetValue("HttpApiToken", HttpApiToken ?? ""); break;
+            case "HttpApiPersistentToken": key.SetValue("HttpApiPersistentToken", HttpApiPersistentToken); break;
             case "AutomationEnabled": key.SetValue("AutomationEnabled", AutomationEnabled); break;
             case "MacroEnabled": key.SetValue("MacroEnabled", MacroEnabled); break;
             case "DebugShowAllUi": key.SetValue("DebugShowAllUi", DebugShowAllUi ? 1 : 0); break;
@@ -366,10 +379,18 @@ namespace OmenSuperHub.Services {
             // 改为按预设持久化到 FanCurves/custom_<preset>_smart.txt (见 FanService)。
             // 字段仍保留作为运行时缓存，由 FanPage 在 LoadConfigState/切换预设时写回。
             case "ShowOsd": key.SetValue("ShowOsd", ShowOsd); break;
-            case "LockKeyOsd": key.SetValue("LockKeyOsd", LockKeyOsd); break;
+            case "OsdMutedKinds": key.SetValue("OsdMutedKinds", OsdMutedKinds ?? ""); break;
             case "OsdPosition": key.SetValue("OsdPosition", OsdPosition); break;
             case "TrayHoverPopup": key.SetValue("TrayHoverPopup", TrayHoverPopup ? 1 : 0); break;
             case "Topmost": key.SetValue("Topmost", Topmost); break;
+            // ponytail: 窗口几何 —— 一次 Save("WindowPlacement") 批量落盘, 见 SaveWindowPlacement()
+            case "WindowPlacement":
+              key.SetValue("WinLeft", WinLeft);
+              key.SetValue("WinTop", WinTop);
+              key.SetValue("WinWidth", WinWidth);
+              key.SetValue("WinHeight", WinHeight);
+              key.SetValue("WinMaximized", WinMaximized ? 1 : 0);
+              break;
             case "EcoQosWhitelist": key.SetValue("EcoQosWhitelist", EcoQosWhitelist); break;
             case "EcoQosBlacklist": key.SetValue("EcoQosBlacklist", EcoQosBlacklist); break;
             case "CustomLogoPath": key.SetValue("CustomLogoPath", CustomLogoPath); break;
@@ -566,9 +587,13 @@ namespace OmenSuperHub.Services {
           LightingDirection = RegStr(key, "LightingDirection", "Left");
           LightingTheme = RegStr(key, "LightingTheme", "Custom");
           LightingUseOfficial = RegInt(key, "LightingUseOfficial", 0) != 0;
+          // ponytail: 这两个字段原先只存不读(Save case 318/327 有,Load 漏)—— 重启后
+          // 温度联动灯效回到关、逐键速度回到 1,用户设置静默丢失。2026-10-22 审查补。
+          LightingTempMode = RegInt(key, "LightingTempMode", 0) != 0;
           PerKeyStaticColor = RegStr(key, "PerKeyStaticColor", "Red");
           PerKeyAnimation = RegStr(key, "PerKeyAnimation", "None");
           PerKeyBrightness = RegByte(key, "PerKeyBrightness", 100);
+          PerKeySpeed = RegByte(key, "PerKeySpeed", 1);
           DisplayMode = RegStr(key, "DisplayMode", "smoothed");
           MonRefreshInterval = RegInt(key, "MonRefreshInterval", 1000);
           IccMax = RegInt(key, "IccMax", 0);
@@ -603,15 +628,29 @@ namespace OmenSuperHub.Services {
           AccentColorSource = RegStr(key, "AccentColorSource", "system");
           AccentColor = RegStr(key, "AccentColor", "#FFFFFFFF");
           Topmost = RegBool(key, "Topmost", true);
+          WinLeft = RegDouble(key, "WinLeft", 0);
+          WinTop = RegDouble(key, "WinTop", 0);
+          WinWidth = RegDouble(key, "WinWidth", 0);
+          WinHeight = RegDouble(key, "WinHeight", 0);
+          WinMaximized = RegBool(key, "WinMaximized", false);
           ShowOsd = RegBool(key, "ShowOsd", true);
-          LockKeyOsd = RegBool(key, "LockKeyOsd", true);
-          OsdPosition = RegStr(key, "OsdPosition", "bottomCenter");
+          // ponytail: 老键 LockKeyOsd 迁移 —— 只在 OsdMutedKinds 从未写过时读一次,
+          // 用户旧配置里关掉的锁定键提示不会因为升级而复活。
+          OsdMutedKinds = RegStr(key, "OsdMutedKinds", null);
+          if (OsdMutedKinds == null) {
+            OsdMutedKinds = RegBool(key, "LockKeyOsd", true) ? "" : "lockKey";
+            try { Save("OsdMutedKinds"); } catch { }
+          }
+          OsdPosition = RegStr(key, "OsdPosition", "bottomRight");
           TrayHoverPopup = RegInt(key, "TrayHoverPopup", 1) == 1;
           EcoQosEnabled = RegBool(key, "EcoQosEnabled", false);
           EcoQosThrottlePlugged = RegBool(key, "EcoQosThrottlePlugged", false);
           HWiNFOEnabled = RegBool(key, "HWiNFOEnabled", false);
           HWiNFOReadEnabled = RegBool(key, "HWiNFOReadEnabled", false);
           HttpApiEnabled = RegBool(key, "HttpApiEnabled", false);
+          LanAccessEnabled = RegBool(key, "LanAccessEnabled", false);
+          HttpApiToken = RegStr(key, "HttpApiToken", "");
+          HttpApiPersistentToken = RegBool(key, "HttpApiPersistentToken", true);
           AutomationEnabled = RegBool(key, "AutomationEnabled", false);
           MacroEnabled = RegBool(key, "MacroEnabled", false);
           DebugShowAllUi = RegInt(key, "DebugShowAllUi", 0) != 0;

@@ -101,7 +101,15 @@ namespace OmenSuperHub.Services {
   internal static class AutomationService {
     private static string FilePath;
     private static readonly object FileLock = new object();
+    // ponytail: ListLock 只收"列表级"并发 —— UI 线程 Add/Remove/序列化枚举 vs 1s/2s/5s/15s
+    // 轮询线程 foreach Pipelines。旧版无锁,并发时 foreach 抛 InvalidOperationException,
+    // 而轮询调用点全在 catch{} 里 → 异常被吞 = 那一拍触发检测整轮静默丢失。
+    // 残面(不算闭环): 返回的快照仍装着共享的 pipeline 对象,其内部 Triggers/Steps 由编辑器
+    // UI 线程实时 Add/RemoveAt(PipelineEditorWindow),轮询 foreach p.Triggers 的同类吞一拍
+    // 异常仍在。收它需编辑器改副本+OK 提交协议,改造面大,本轮不做。
+    private static readonly object ListLock = new object();
     private static DataContractJsonSerializer _serializer;
+    // ponytail: 引用整体替换(原子),增删只在 ListLock 内 → 锁内快照拿到的永远是完整列表(旧或新)。
     public static List<AutomationPipeline> Pipelines { get; private set; }
 
     internal static string NormalizeProcName(string name) {
@@ -137,14 +145,37 @@ namespace OmenSuperHub.Services {
     }
 
     public static void Save() {
-      lock (FileLock) {
-        try {
-          using (var ms = new MemoryStream()) {
-            _serializer.WriteObject(ms, Pipelines);
-            File.WriteAllBytes(FilePath, ms.ToArray());
+      // ponytail: 序列化(= 枚举整个管道图)在 ListLock 内做,文件 IO 在 ListLock 外 ——
+      // 磁盘慢/被占用时不阻塞轮询线程取快照。payload 为 null 表示序列化失败:
+      // 与旧版同义(旧版 WriteObject 抛异常 → 后面的 WriteAllBytes 根本不执行),不覆写文件。
+      byte[] payload = null;
+      lock (ListLock) {
+        if (Pipelines == null) {
+          // 未 Initialize 就 Save: 宁可跳过,也不能把磁盘上的用户管道覆写成空列表
+          Logger.Error("AutomationService.Save skipped: Pipelines 未初始化");
+        } else {
+          try {
+            using (var ms = new MemoryStream()) {
+              _serializer.WriteObject(ms, Pipelines);
+              payload = ms.ToArray();
+            }
+          } catch (Exception ex) {
+            Logger.Error("AutomationService.Save failed: " + ex.Message);
           }
-        } catch (Exception ex) {
-          Logger.Error("AutomationService.Save failed: " + ex.Message);
+        }
+      }
+      if (payload != null) {
+        lock (FileLock) {
+          try {
+            // ponytail: temp + Replace 原子换入（同 MacroService）—— 裸 WriteAllBytes
+            // 半途截断后 Load 降级空列表,下一次 Save 会把用户管道永久覆盖为空。
+            string tmp = FilePath + ".tmp";
+            File.WriteAllBytes(tmp, payload);
+            if (File.Exists(FilePath)) File.Replace(tmp, FilePath, null);
+            else File.Move(tmp, FilePath);
+          } catch (Exception ex) {
+            Logger.Error("AutomationService.Save failed: " + ex.Message);
+          }
         }
       }
       // ponytail: 管道增删/启用/禁用都过 Save —— 同步按需启停温度/电池/计划定时器,无需各自插钩子。
@@ -154,40 +185,52 @@ namespace OmenSuperHub.Services {
       AutomationProcessor.RefreshHotkeys();
     }
 
-	    public static void AddPipeline(AutomationPipeline pipeline) {
-	      Pipelines.Add(pipeline);
-	      Save();
-	      AutomationProcessor.RefreshHotkeys();
-	    }
+    public static void AddPipeline(AutomationPipeline pipeline) {
+      lock (ListLock) {
+        if (Pipelines == null) Pipelines = new List<AutomationPipeline>();
+        Pipelines.Add(pipeline);
+      }
+      Save();
+      AutomationProcessor.RefreshHotkeys();
+    }
 
-	    public static void RemovePipeline(AutomationPipeline pipeline) {
-	      Pipelines.Remove(pipeline);
-	      Save();
-	      AutomationProcessor.RefreshHotkeys();
-	    }
+    public static void RemovePipeline(AutomationPipeline pipeline) {
+      lock (ListLock) {
+        if (Pipelines == null) Pipelines = new List<AutomationPipeline>();
+        Pipelines.Remove(pipeline);
+      }
+      Save();
+      AutomationProcessor.RefreshHotkeys();
+    }
 
-	    public static void UpdatePipeline(AutomationPipeline pipeline) {
-	      Save();
-	      AutomationProcessor.RefreshHotkeys();
-	    }
+    public static void UpdatePipeline(AutomationPipeline pipeline) {
+      Save();
+      AutomationProcessor.RefreshHotkeys();
+    }
 
     public static List<AutomationPipeline> GetEnabledPipelines() {
+      // 在 ListLock 内过滤并返回新建的副本 —— 调用方(轮询线程)拿到的列表不再被 UI 线程增删。
       var result = new List<AutomationPipeline>();
-      foreach (var p in Pipelines) {
-        if (!p.Enabled) continue;
-        p.EnsureTriggers();
-        if (p.IsQuickAction) continue;
-        result.Add(p);
+      lock (ListLock) {
+        if (Pipelines == null) return result;
+        foreach (var p in Pipelines) {
+          if (!p.Enabled) continue;
+          p.EnsureTriggers();
+          if (p.IsQuickAction) continue;
+          result.Add(p);
+        }
       }
       return result;
     }
 
     public static List<AutomationPipeline> GetQuickActions() {
       var result = new List<AutomationPipeline>();
-      if (Pipelines == null) return result;
-      foreach (var p in Pipelines) {
-        if (p.Enabled && p.IsQuickAction)
-          result.Add(p);
+      lock (ListLock) {
+        if (Pipelines == null) return result;
+        foreach (var p in Pipelines) {
+          if (p.Enabled && p.IsQuickAction)
+            result.Add(p);
+        }
       }
       return result;
     }

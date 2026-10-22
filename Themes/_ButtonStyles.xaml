@@ -151,15 +151,7 @@
                   </Storyboard>
                 </BeginStoryboard>
               </Trigger.ExitActions>
-              <Setter TargetName="Bd" Property="BorderBrush">
-                <Setter.Value>
-                  <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
-                    <GradientStop Color="#FF55E1" Offset="0.0"/>
-                    <GradientStop Color="#FF0402" Offset="0.5"/>
-                    <GradientStop Color="#FFB402" Offset="1.0"/>
-                  </LinearGradientBrush>
-                </Setter.Value>
-              </Setter>
+              <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource OmenBrandGradient}"/>
             </Trigger>
             <Trigger Property="IsPressed" Value="True">
               <Setter TargetName="Bd" Property="Background" Value="{DynamicResource BgHoverBrush}"/>
