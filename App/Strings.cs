@@ -1286,6 +1286,26 @@ namespace OmenSuperHub {
 	  public static string OccStubEnableDevModePrompt => T("注册存根需要开启「开发者模式」。是否现在自动开启？（将写入系统开发者模式开关）", "註冊存根需要開啟「開發者模式」。是否現在自動開啟？（將寫入系統開發者模式開關）", "Registering the stub requires Developer Mode. Enable it now? (This writes the system Developer Mode switch.)");
 	  public static string OccStubEnableDevModeFail => T("开启开发者模式失败，请用管理员权限运行后重试；或手动到 Windows 设置 → 隐私和安全性 → 开发者选项，打开「开发人员模式」开关。", "開啟開發者模式失敗，請以系統管理員權限執行後重試；或手動到 Windows 設定 → 隱私權和安全性 → 適用於開發人員，開啟「開發人員模式」開關。", "Failed to enable Developer Mode. Run as administrator and retry, or turn it on manually in Windows Settings → Privacy & security → For developers → Developer Mode.");
 
+	  // ═══ 「安装」按钮的说明弹窗 ═══
+	  // ponytail: 点「安装」只是拉起商店详情页,不能静默安装。而商店按 HP 配的设备白名单判资格,
+	  // 不在名单上的机型进去只会看到「此应用对于你的当前设备不受支持」、「获取」置灰 ——
+	  // 用户会以为按钮坏了。先讲清楚:能装就装,不能装就用本程序自带灯光页。
+	  public static string OccStubInstallTitle => T("安装 OMEN Light Studio", "安裝 OMEN Light Studio", "Install OMEN Light Studio");
+	  public static string OccStubInstallHint => T(
+	    "点击「继续」将打开 Microsoft Store 的 Light Studio 详情页，在那里点「获取」完成安装。\n\n" +
+	    "注意：商店会按机型判断是否支持。OMEN Light Studio 主要面向 OMEN 台式机（45L / 35L / 25L / 40L / 40XT / 15 / 30L）；" +
+	    "若你的机型不在支持范围内，详情页会显示「此应用对于你的当前设备不受支持」且「获取」置灰 —— 这不是本程序的故障。\n\n" +
+	    "此时请改用本程序自带的灯光页（左侧「灯光」）。若已切到官方灯效导致灯光页隐藏，点下方「恢复 OXH 实验性灯效」即可切回。",
+	    "點擊「繼續」將開啟 Microsoft Store 的 Light Studio 詳細資料頁，在那裡點「取得」完成安裝。\n\n" +
+	    "注意：商店會依機型判斷是否支援。OMEN Light Studio 主要面向 OMEN 桌上型電腦（45L / 35L / 25L / 40L / 40XT / 15 / 30L）；" +
+	    "若你的機型不在支援範圍內，詳細資料頁會顯示「此應用程式不支援您目前的裝置」且「取得」變灰 —— 這不是本程式的故障。\n\n" +
+	    "此時請改用本程式內建的燈效頁（左側「燈效」）。若已切到官方燈效導致燈效頁隱藏，點下方「恢復 OXH 實驗性燈效」即可切回。",
+	    "Click Continue to open the OMEN Light Studio page in Microsoft Store, then click Get there to install.\n\n" +
+	    "Note: the Store checks your device model. OMEN Light Studio targets OMEN desktops (45L / 35L / 25L / 40L / 40XT / 15 / 30L). " +
+	    "If your model is not supported, the page shows \"This app is not supported on your device\" with Get greyed out — that is not a fault of this app.\n\n" +
+	    "In that case use the built-in Lighting page (left sidebar). If you already switched to official lighting and that page is hidden, click \"Re-enable OXH lighting\" below to switch back.");
+	  public static string OccStubInstallContinue => T("继续打开商店", "繼續開啟商店", "Continue to Store");
+
 	  // ═══ Phase 2: PerfPage.xaml hardcoded strings ═══
 	  public static string PerfPresetLabel => T("预设:", "預設:", "Preset:");
 	  public static string PerfPresetCopyRename => T("复制并重命名预设:", "複製並重新命名預設:", "Copy & Rename Preset:");

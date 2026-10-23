@@ -470,6 +470,11 @@ namespace OmenSuperHub.Pages {
 
     // 拉起商店到 OLS 详情页(explorer 壳,不继承管理员令牌)。ms-store 无法静默装,深链是唯一干净路径。
     void OccStubInstall_Click(object sender, RoutedEventArgs e) {
+      // ponytail: 先说明再跳商店 —— 商店按 HP 设备白名单判资格,不在名单的机型进去只看到
+      // 「获取」置灰,用户会以为按钮坏了。说明文案见 Strings.OccStubInstallHint。
+      if (!Utils.DialogHelper.Choice(Strings.OccStubInstallHint, Strings.OccStubInstallTitle,
+              Strings.OccStubInstallContinue, Strings.ButtonCancel))
+        return;
       if (!Services.OccStubService.InstallLightStudio())
         if (LightStudioStatusText != null) LightStudioStatusText.Text = Strings.OccStubLsMissing;
     }
