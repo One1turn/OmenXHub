@@ -676,37 +676,17 @@
                   <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysGPUTemp}"/><Run Text=":"/></TextBlock>
                   <TextBlock x:Name="SysGpuTempText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Right" Margin="8,0,0,0"/>
                 </Grid>
-                <Grid x:Name="SysIrSensorRow" Margin="0,2,0,0">
+                <!-- ponytail: 板载温度 —— OMEN WMI 0x23 在实测的 Intel 8D3F 与 AMD 8E35 上都只暴露
+                     一路读数(index 0-3 返回同一值)。旧实现按 IR/环境/PCH/VR 四路显示,四格数字完全
+                     相同且标签全错。合并成一格;若将来某机型真有多路,GetSensorTemperature 的 index
+                     形参仍在,届时再按探测结果分叉。 -->
+                <Grid x:Name="SysBoardTempRow" Margin="0,2,0,0">
                   <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
                     <ColumnDefinition Width="*"/>
                   </Grid.ColumnDefinitions>
-                  <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysIRSensor}"/><Run Text=":"/></TextBlock>
-                  <TextBlock x:Name="SysIrSensorText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Right" Margin="8,0,0,0"/>
-                </Grid>
-                <Grid x:Name="SysAmbientRow" Margin="0,2,0,0">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
-                    <ColumnDefinition Width="*"/>
-                  </Grid.ColumnDefinitions>
-                  <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysAmbient}"/><Run Text=":"/></TextBlock>
-                  <TextBlock x:Name="SysAmbientText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Right" Margin="8,0,0,0"/>
-                </Grid>
-                <Grid x:Name="SysPchRow" Margin="0,2,0,0">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
-                    <ColumnDefinition Width="*"/>
-                  </Grid.ColumnDefinitions>
-                  <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysPCH}"/><Run Text=":"/></TextBlock>
-                  <TextBlock x:Name="SysPchText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Right" Margin="8,0,0,0"/>
-                </Grid>
-                <Grid x:Name="SysVrRow" Margin="0,2,0,0">
-                  <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
-                    <ColumnDefinition Width="*"/>
-                  </Grid.ColumnDefinitions>
-                  <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysVR}"/><Run Text=":"/></TextBlock>
-                  <TextBlock x:Name="SysVrText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Right" Margin="8,0,0,0"/>
+                  <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysBoardTemp}"/><Run Text=":"/></TextBlock>
+                  <TextBlock x:Name="SysBoardTempText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Right" Margin="8,0,0,0"/>
                 </Grid>
                 <!-- ponytail: 额外温度传感器 — 默认 Collapsed,只在勾选 ID 且硬件有读值时 Visible(见 UpdateExtraTempRow)。读不到显 "-"。 -->
                 <Grid x:Name="SysGpuHotSpotRow" Margin="0,2,0,0" Visibility="Collapsed">
@@ -748,6 +728,16 @@
                   </Grid.ColumnDefinitions>
                   <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysNvme}"/><Run Text=":"/></TextBlock>
                   <TextBlock x:Name="SysNvmeText" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Right" Margin="8,0,0,0"/>
+                </Grid>
+                <!-- ponytail: NVMe 第二路温度 —— Temperature 2 是主控/闪存里更热的那个点
+                     (实测 48~58℃ 随负载动),旧实现只取第一个匹配,永远拿到复合值把它丢掉了。 -->
+                <Grid x:Name="SysNvme2Row" Margin="0,2,0,0" Visibility="Collapsed">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="InfoLabel"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextSecondaryBrush}"><Run Text="{x:Static app:Strings.SysNvme2}"/><Run Text=":"/></TextBlock>
+                  <TextBlock x:Name="SysNvme2Text" Grid.Column="1" FontSize="{DynamicResource FontSizeCaption}" Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Right" Margin="8,0,0,0"/>
                 </Grid>
                 <Grid x:Name="SysMotherboardRow" Margin="0,2,0,0" Visibility="Collapsed">
                   <Grid.ColumnDefinitions>

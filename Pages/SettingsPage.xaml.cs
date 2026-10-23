@@ -303,6 +303,7 @@ namespace OmenSuperHub.Pages {
       "CPU_COREAVG" => Strings.SysCpuCoreAvg,
       "CPU_TJMAX_DISTANCE" => Strings.SysCpuTjmaxDistance,
       "STORAGE_NVME_0" => Strings.SysNvme,
+      "STORAGE_NVME_1" => Strings.SysNvme2,
       "MOTHERBOARD_SUPERIO" => Strings.SysMotherboard,
       _ => id,
     };

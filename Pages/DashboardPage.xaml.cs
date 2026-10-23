@@ -154,17 +154,16 @@ namespace OmenSuperHub.Pages {
         double gpuUtil = gpuOn ? HardwareService.GPUUsage : 0;
         double gpuFan = gpuOn ? HardwareService.FanSpeedNow[1] * 100 : 0;
         double gpuClock = gpuOn ? HardwareService.GPUClock : 0;
-        int ir = (int)HardwareService.GetDisplayIrTemp();
-        int amb = GetSensorTemperature(1);
-        int pch = GetSensorTemperature(2);
-        int vr = GetSensorTemperature(3);
+        // ponytail: 板载温度 —— 0x23 只有一路(实测 index 0-3 同值),不再按 IR/环境/PCH/VR 读四遍。
+        // 每读一次都是一次 WMI 调用,原来这里每刷新一次就发 4 次同样的请求。
+        int board = (int)HardwareService.GetDisplayIrTemp();
         // Push results back to UI thread
         Dispatcher.BeginInvoke(new Action(() =>
           RefreshDashboardCore(cpuOn, gpuOn, memOn, mem, cpuTemp, cpuUtil, cpuFan, cpuClock,
               gpuTemp, gpuUtil, gpuFan, gpuClock, presetKey, fc, ft)
         ), DispatcherPriority.Background);
         Dispatcher.BeginInvoke(new Action(() =>
-          RefreshSensorsCore(cpuTemp, gpuTemp, ir, amb, pch, vr)
+          RefreshSensorsCore(cpuTemp, gpuTemp, board)
         ), DispatcherPriority.Background);
         // ponytail: 解耦 —— 不再在此驱动 FloatingWindow.UpdateAllText()。浮窗已有独立 1Hz 后端
         // timer(EnsureTimer)+ TrayService.UpdateTooltip 的 UpdateAllTextTicked 驱动,此处再 forceLayout
@@ -407,13 +406,10 @@ namespace OmenSuperHub.Pages {
       (zeroMeansOff ? v <= 0 : v < 0) ? "-" : v + " °C";
 
     /// <summary>UI-only sensor temperature update from pre-fetched data.</summary>
-    void RefreshSensorsCore(int cpuT, int gpuT, int ir, int amb, int pch, int vr) {
+    void RefreshSensorsCore(int cpuT, int gpuT, int board) {
       SetInfoValue(SysCpuTempText, SensorValue(cpuT, true));
       SetInfoValue(SysGpuTempText, SensorValue(gpuT, true));
-      SetInfoValue(SysIrSensorText, SensorValue(ir, false));
-      SetInfoValue(SysAmbientText, SensorValue(amb, false));
-      SetInfoValue(SysPchText, SensorValue(pch, false));
-      SetInfoValue(SysVrText, SensorValue(vr, false));
+      SetInfoValue(SysBoardTempText, SensorValue(board, false));
       UpdateExtraTempRows();
     }
 
@@ -435,6 +431,7 @@ namespace OmenSuperHub.Pages {
       UpdateExtraTempRow(SysCpuCoreAvgRow, SysCpuCoreAvgText, "CPU_COREAVG");
       UpdateExtraTempRow(SysCpuTjmaxDistanceRow, SysCpuTjmaxDistanceText, "CPU_TJMAX_DISTANCE");
       UpdateExtraTempRow(SysNvmeRow, SysNvmeText, "STORAGE_NVME_0");
+      UpdateExtraTempRow(SysNvme2Row, SysNvme2Text, "STORAGE_NVME_1");
       UpdateExtraTempRow(SysMotherboardRow, SysMotherboardText, "MOTHERBOARD_SUPERIO");
     }
 
@@ -1317,7 +1314,7 @@ namespace OmenSuperHub.Pages {
         int validation = 0, tj = 0, nvidiaTj = 0;
         float[] powerLimits = null;
         string kb = null;
-        string cpuTemp = "", gpuTemp = "", irTemp = "", ambTemp = "", pchTemp = "", vrTemp = "";
+        string cpuTemp = "", gpuTemp = "", boardTemp = "";
         try {
           using (var searcher = new ManagementObjectSearcher("SELECT Manufacturer, Model FROM Win32_ComputerSystem"))
           using (var col = searcher.Get()) {
@@ -1355,10 +1352,9 @@ try { kb = GetKeyboardTypeName((NbKeyboardLightingType)(kbRaw = (int)GetKeyboard
 	        try {
           cpuTemp = SensorValue((int)HardwareService.GetDisplayCpuTemp(), true);
           gpuTemp = SensorValue((int)HardwareService.GetDisplayGpuTemp(), true);
-          irTemp = SensorValue(GetSensorTemperature(0), false);
-          ambTemp = SensorValue(GetSensorTemperature(1), false);
-          pchTemp = SensorValue(GetSensorTemperature(2), false);
-          vrTemp = SensorValue(GetSensorTemperature(3), false);
+          // ponytail: 板载温度只有一路(0x23 的 index 参数被 BIOS 忽略,实测 0-3 同值),
+          // 原来这里发 4 次同样的 WMI 请求只为填四格相同的数字。
+          boardTemp = SensorValue(GetSensorTemperature(0), false);
         } catch { }
         string _pn = pn, _board = board;
         int _validation = validation, _tj = tj, _nvidiaTj = nvidiaTj, _kbRaw = kbRaw;
@@ -1409,10 +1405,7 @@ try { kb = GetKeyboardTypeName((NbKeyboardLightingType)(kbRaw = (int)GetKeyboard
           if (updates.Count > 0) ConfigService.BatchSave(updates);
           SetInfoValue(SysCpuTempText, cpuTemp);
           SetInfoValue(SysGpuTempText, gpuTemp);
-          SetInfoValue(SysIrSensorText, irTemp);
-          SetInfoValue(SysAmbientText, ambTemp);
-          SetInfoValue(SysPchText, pchTemp);
-          SetInfoValue(SysVrText, vrTemp);
+          SetInfoValue(SysBoardTempText, boardTemp);
           UpdateExtraTempRows();
         }, DispatcherPriority.Background);
       });
@@ -1421,7 +1414,7 @@ try { kb = GetKeyboardTypeName((NbKeyboardLightingType)(kbRaw = (int)GetKeyboard
     void RefreshSensors() {
       RefreshSensorsCore(
           (int)HardwareService.GetDisplayCpuTemp(), (int)HardwareService.GetDisplayGpuTemp(),
-          GetSensorTemperature(0), GetSensorTemperature(1), GetSensorTemperature(2), GetSensorTemperature(3));
+          GetSensorTemperature(0));
       _ = RefreshNvidiaPowerLimitAsync();
     }
 

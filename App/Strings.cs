@@ -274,16 +274,21 @@ namespace OmenSuperHub {
     public static string SysCPUTemp => T("CPU 温度", "CPU 溫度", "CPU Temp");
     public static string SysGPUTemp => T("GPU 温度", "GPU 溫度", "GPU Temp");
     public static string SysUnknown => T("未知", "未知", "Unknown");
-    public static string SysIRSensor => T("IR传感器", "IR感測器", "IR Sensor");
-    public static string SysAmbient => T("环境传感器", "環境感測器", "Ambient Sensor");
-    public static string SysPCH => T("PCH传感器", "PCH感測器", "PCH Sensor");
-    public static string SysVR => T("VR传感器", "VR感測器", "VR Sensor");
+    // ponytail: 板载温度 —— OMEN WMI 0x23 在实测的 Intel 8D3F 与 AMD 8E35 上都只暴露
+    // **一路**读数(index 0-3 返回同一个值、载荷 [t,0,0,0]),语义是机箱/主板内部传感器,
+    // 不是 IR/环境/PCH/VR 四路。旧标签把同一路数据标成四个不同传感器,四格显示同一数字。
+    // 叫"板载温度"而非"机架温度":实测它 15s 内纹丝不动(33℃ 恒定),连环境温度都算不上。
+    public static string SysBoardTemp => T("板载温度", "板載溫度", "Board Temp");
+    // ponytail: 删掉 SysIRSensor/SysAmbient/SysPCH/SysVR —— 0x23 只有一路,那四个标签从未
+    // 对应过真实传感器(见 SysBoardTemp 注释),合并成一格后已无引用。
     // ═══ 额外温度传感器(Dashboard 传感器温度卡新增行;ID 见 HardwareService.ExtraSensorIds) ═══
     public static string SysGpuHotSpot => T("GPU 热点", "GPU 熱點", "GPU Hot Spot");
     public static string SysCpuCoreMax => T("CPU 核心最高", "CPU 核心最高", "CPU Core Max");
     public static string SysCpuCoreAvg => T("CPU 核心均温", "CPU 核心均溫", "CPU Core Avg");
     public static string SysCpuTjmaxDistance => T("CPU 距TjMax", "CPU 距TjMax", "CPU Distance to TjMax");
     public static string SysNvme => T("M.2 SSD", "M.2 SSD", "M.2 SSD");
+    // ponytail: NVMe 第二路温度(Temperature 2 = 主控/闪存更热点),与复合温度分开显示
+    public static string SysNvme2 => T("M.2 SSD 热点", "M.2 SSD 熱點", "M.2 SSD Hot Spot");
     public static string SysMotherboard => T("主板", "主機板", "Motherboard");
     public static string ExtraTempSensorsHeading => T("额外温度传感器", "額外溫度感測器", "Extra Temperature Sensors");
     public static string ExtraTempSensorsDesc => T(

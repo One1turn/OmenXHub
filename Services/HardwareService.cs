@@ -74,7 +74,7 @@ namespace OmenSuperHub.Services {
     // ponytail: 固定清单不复用 OMEN WMI 0x23 那路(IR/Ambient/PCH/VR 已在 Dashboard 独立显示,纳入本管理会双重)
     public static readonly string[] ExtraSensorIds = {
       "GPUNV_HOTSPOT", "CPU_COREMAX", "CPU_COREAVG", "CPU_TJMAX_DISTANCE",
-      "STORAGE_NVME_0", "MOTHERBOARD_SUPERIO",
+      "STORAGE_NVME_0", "STORAGE_NVME_1", "MOTHERBOARD_SUPERIO",
     };
     // ID → 当前温度(未读到=负数)。每轮 QueryHardware 按"读到才覆写"语义,读不到保留上次值(避免 UI 抖动)。
     // ponytail: _extraRaw/_extraSmoothed 专用锁 —— 线程池写(QueryHardware)对 UI 读
@@ -362,12 +362,21 @@ namespace OmenSuperHub.Services {
                 if (val > GPUUsage) GPUUsage = val;
               }
             } else if (hardware.HardwareType == LibreHardwareType.Storage) {
-              // ponytail: 多盘只取第一个 hardware 的第一个温度(符合"固定清单"本意,多盘留待以后)
-              // "已占位"= 已提交的 _extraRaw(跨 tick 首见定盘) 或 本 tick 的 pendingExtra(等价旧写法)
-              if (sensor.SensorType == LibreSensorType.Temperature && !_extraRaw.ContainsKey("STORAGE_NVME_0")
-                  && !pendingExtra.ContainsKey("STORAGE_NVME_0")) {
+              // ponytail: 多盘只取第一个 hardware(符合"固定清单"本意,多盘留待以后)。
+              // NVMe 通常报 3 路温度:Temperature / Temperature 1 是同一复合值(实测完全相等),
+              // Temperature 2 是另一路(实测 48~58℃ 随负载动,明显高于复合值)——
+              // 那才是主控/闪存里更热的点。旧实现只取"第一个匹配",永远拿到复合值,
+              // 更热的那路被丢掉。现在按名字区分:复合值 → _0,最高的其余一路 → _1。
+              // "已占位"= 已提交的 _extraRaw(跨 tick 首见定盘) 或 本 tick 的 pendingExtra。
+              if (sensor.SensorType == LibreSensorType.Temperature) {
                 int v = (int)sensor.Value.GetValueOrDefault();
-                if (v >= 1 && v <= 120) { pendingExtra["STORAGE_NVME_0"] = v; _extraSeenThisTick["STORAGE_NVME_0"] = true; }
+                if (v >= 1 && v <= 120) {
+                  string id = NvmeTempSensorId(sensor.Name);
+                  // 同 ID 只取首次读到的;不同 ID 互不阻塞
+                  if (!_extraRaw.ContainsKey(id) && !pendingExtra.ContainsKey(id)) {
+                    pendingExtra[id] = v; _extraSeenThisTick[id] = true;
+                  }
+                }
               }
             } else if (hardware.HardwareType == LibreHardwareType.Motherboard || hardware.HardwareType == LibreHardwareType.SuperIO) {
               // SuperIO/主板第一个温度(PCH 等已在 OMEN WMI 0x23 那路独立显示,本路补位非 OMEN 机型)
@@ -555,6 +564,19 @@ namespace OmenSuperHub.Services {
     static float _rawCpuTemp, _rawGpuTemp, _rawIrTemp = -1;
 
     // ponytail: 最小可运行检查——非法样本不能刷新状态，显示 getter 不能偷偷推进 EMA。
+    /// <summary>NVMe 温度传感器名 → extra sensor ID。复合值(Temperature / Temperature 1)
+    /// 归 _0,其余(实测 Temperature 2)归 _1。纯函数,便于自检。</summary>
+    /// <remarks>
+    /// ponytail: NVMe 通常报 3 路:Temperature / Temperature 1 完全相等(复合值),
+    /// Temperature 2 是主控/闪存更热点(实测 48~58℃ 随负载动)。旧实现"取第一个匹配"
+    /// 永远拿到复合值,更热那路被丢掉。按名字区分比"第几个"稳 —— 不同厂商的
+    /// 传感器顺序不保证一致。
+    /// </remarks>
+    internal static string NvmeTempSensorId(string sensorName) {
+      string nm = sensorName ?? "";
+      return (nm == "Temperature" || nm == "Temperature 1") ? "STORAGE_NVME_0" : "STORAGE_NVME_1";
+    }
+
     public static string SelfCheck() {
       float oldTemp = GPUTemp, oldPower = GPUPower, oldRaw = _rawGpuTemp, oldDisplay = _gpuPowerDisplay;
       DateTime oldTempUtc = _lastGpuTempSampleUtc, oldPowerUtc = _lastGpuPowerSampleUtc;
@@ -579,7 +601,18 @@ namespace OmenSuperHub.Services {
         // -1 只该活在写侧哨兵里(见:52), 显示层必须钳 0 —— 否则启动首拍 UI 出 "-100"。
         bool fanSentinelClamped = GetDisplayFanSpeedPct(-1) == 0 && GetDisplayFanSpeedPct(0) == 0
           && GetDisplayFanSpeedPct(12) == 1200;
+        // ponytail: NVMe 双路温度归类 —— 复合值进 _0,更热点进 _1。
+        // 归类错了会把"更热的点"当成复合值显示,或反过来,用户看到的数字就少了意义。
+        bool nvmeRouting = NvmeTempSensorId("Temperature") == "STORAGE_NVME_0"
+          && NvmeTempSensorId("Temperature 1") == "STORAGE_NVME_0"
+          && NvmeTempSensorId("Temperature 2") == "STORAGE_NVME_1"
+          && NvmeTempSensorId("") == "STORAGE_NVME_1"
+          && NvmeTempSensorId(null) == "STORAGE_NVME_1";
+        // 两个 ID 都必须在清单里,否则设置页勾选项 / Dashboard 行会对不上
+        bool nvmeIdsListed = ExtraSensorIds.Contains("STORAGE_NVME_0")
+          && ExtraSensorIds.Contains("STORAGE_NVME_1");
         return rejectsBad && acceptsGood && sourcePriority && pureGetter && fanSentinelClamped
+          && nvmeRouting && nvmeIdsListed
           ? "PASS GPU monitor sampling/source priority + fan sentinel clamp"
           : "FAIL GPU monitor sampling/source priority + fan sentinel clamp";
       } finally {
