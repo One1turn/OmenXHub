@@ -114,14 +114,21 @@
 	          <TextBlock Text="{x:Static app:Strings.FloatLabelFps}" FontFamily="{DynamicResource MonoFontFamily}"
                      FontWeight="ExtraBold" FontSize="{DynamicResource FontSizeSubtitle}"
                      Foreground="#FF9800" VerticalAlignment="Center" x:Name="FpsLabel"/>
-          <!-- ponytail: FPS value + app name stacked vertically inside the bar item, app name on its own line below the number -->
+          <!-- ponytail: FPS value 一行, 1%低帧 + 应用名一行。多值的那一行按本文件既有写法
+               用横向 StackPanel 包起来(同 CpuLine2/GpuLine2), col/row 两种布局都不用特判。
+               低帧无数据(刚起来还没攒够窗口)时文本为空, 空 TextBlock 不占宽。 -->
           <StackPanel x:Name="FpsDataStack" Orientation="Vertical" Margin="4,0,0,0">
             <TextBlock x:Name="FpsValueText" FontFamily="{DynamicResource MonoFontFamily}"
                        FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                        Foreground="#FF9800" VerticalAlignment="Center"/>
-            <TextBlock x:Name="FpsAppText" FontFamily="{DynamicResource MonoFontFamily}"
-                       FontWeight="Bold" FontSize="{DynamicResource FontSizeCaption}"
-                       Foreground="#AAA" VerticalAlignment="Center"/>
+            <StackPanel x:Name="FpsLine2" Orientation="Horizontal">
+              <TextBlock x:Name="FpsLowText" FontFamily="{DynamicResource MonoFontFamily}"
+                         FontWeight="Bold" FontSize="{DynamicResource FontSizeCaption}"
+                         Foreground="#FFB347" VerticalAlignment="Center" Margin="0,0,5,0"/>
+              <TextBlock x:Name="FpsAppText" FontFamily="{DynamicResource MonoFontFamily}"
+                         FontWeight="Bold" FontSize="{DynamicResource FontSizeCaption}"
+                         Foreground="#AAA" VerticalAlignment="Center"/>
+            </StackPanel>
           </StackPanel>
           <TextBlock x:Name="Sep5" Text=" | " FontFamily="{DynamicResource MonoFontFamily}" FontWeight="Bold" FontSize="{DynamicResource FontSizeSubtitle}"
                      Foreground="#888" VerticalAlignment="Center" Margin="2,0" Visibility="Collapsed"/>

@@ -1242,6 +1242,8 @@ namespace OmenSuperHub {
 	  public static string FloatLabelMem => T("MEM", "MEM", "MEM");
 	  public static string FloatLabelNet => T("NET", "NET", "NET");
 	  public static string FloatLabelFps => T("FPS", "FPS", "FPS");
+	  /// <summary>浮窗 FPS 行第二行的 1% 低帧标记。取缩写(与 MEM/NET 同风格), 数值紧随其后。</summary>
+	  public static string FloatLabelFpsLow => T("1%L", "1%L", "1%L");
 	  public static string FloatLabelFan => T("FAN", "FAN", "FAN");
 
 	  public static string TrayHeader => T("OMEN X HUB", "OMEN X HUB", "OMEN X HUB");

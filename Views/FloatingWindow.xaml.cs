@@ -69,7 +69,7 @@ namespace OmenSuperHub.Views {
     // ponytail: previous-string cache — skips TextBlock.Text assignment when value is unchanged,
     // which also avoids WPF's FormattedText layout pass for unchanged text
     string _lastCpuTemp, _lastCpuPower, _lastCpuUsage, _lastCpuFreq, _lastGpuTemp, _lastGpuPower, _lastGpuUsage, _lastGpuFreq, _lastFanSpeed0, _lastFanSpeed1;
-    string _lastMemPct, _lastMemUsed, _lastNetDown, _lastNetUp, _lastFps, _lastFpsApp;
+    string _lastMemPct, _lastMemUsed, _lastNetDown, _lastNetUp, _lastFps, _lastFpsApp, _lastFpsLow;
     int _lastCpuTempIdx = -1, _lastGpuTempIdx = -1;
 
     static void SetIfChanged(System.Windows.Controls.TextBlock tb, ref string cache, string value) {
@@ -198,7 +198,7 @@ namespace OmenSuperHub.Views {
       NetUpText.Margin = lineGap;
       MemUsedText.Margin = lineGap;
       FanSpeed1Text.Margin = lineGap;
-      FpsAppText.Margin = lineGap;
+      FpsLine2.Margin = lineGap;
       // ponytail: separators toggled per-cycle in DoUpdateText so collapsed rows don't leave orphaned `|`
     }
 
@@ -210,7 +210,7 @@ namespace OmenSuperHub.Views {
     struct TickSnapshot {
       public bool MemValid; public double MemPct, MemUsedGB, MemTotalGB;
       public bool NetValid; public double DownKBps, UpKBps;
-      public bool FpsValid; public int Fps; public string FpsApp;
+      public bool FpsValid; public int Fps; public string FpsApp; public int FpsLow;
     }
 
     static TickSnapshot BuildTickSnapshot() {
@@ -248,6 +248,7 @@ namespace OmenSuperHub.Views {
           s.FpsValid = true;
           s.Fps = fps;
           s.FpsApp = string.IsNullOrWhiteSpace(app) ? "" : ShortAppName(app);
+          s.FpsLow = _fpsMonitor?.LastFpsLow ?? 0;
         }
       } else if (_fpsMonitor != null) {
         DisposeFpsMonitorAsync();
@@ -314,6 +315,9 @@ namespace OmenSuperHub.Views {
         if (s.FpsValid) {
           w.FpsRow.Visibility = Visibility.Visible;
           SetIfChanged(w.FpsValueText, ref w._lastFps, s.Fps.ToString());
+          // 低帧要攒满 10s 窗口才有值, 起步阶段为 0 → 显示空串(整块留白), 不显示 "1%L 0"。
+          SetIfChanged(w.FpsLowText, ref w._lastFpsLow,
+                       s.FpsLow > 0 ? Strings.FloatLabelFpsLow + " " + s.FpsLow : "");
           SetIfChanged(w.FpsAppText, ref w._lastFpsApp, s.FpsApp);
         } else {
           w.FpsRow.Visibility = Visibility.Collapsed;
@@ -523,6 +527,8 @@ namespace OmenSuperHub.Views {
       double fpsAppFs = Math.Max(8, fontSize - 4);
       FpsAppText.FontSize = fpsAppFs;
       FpsAppText.Width = EmW(fpsAppFs, 14); FpsAppText.TextAlignment = TextAlignment.Left;
+      // 低帧与不占固定宽(内容长度有界: 标记+至多 3-4 位数字), 免得白留空
+      FpsLowText.FontSize = fpsAppFs;
     }
 
     private void UpdatePosition() {
