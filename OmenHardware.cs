@@ -302,6 +302,10 @@ namespace OmenSuperHub {
       return result != null;
     }
 
+    /// <summary>读旧版除尘状态字(命令 44 / type 1),供 SetLegacyCleanCreek 的回读校验用。
+    /// 返回 null 表示读失败 —— 调用方必须区分"读失败"与"读到未反转"。</summary>
+    public static byte[] GetLegacyCleanCreekState() => SendOmenBiosWmi(44, null, 4, 1);
+
     // ponytail: delegate to the 3-param overload — a single WMI write per call.
     // The previous 3-step sequence (SetMaxFanSpeedOff → {0,0} → target) was a
     // >6000 RPM runaway fix, but running it on every timer tick (once per second)

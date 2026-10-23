@@ -362,7 +362,9 @@ namespace OmenSuperHub.Pages {
       int rpm = FanService.ParseFanRpm(ConfigService.FanControl);
       ConfigService.FanControl = rpm + " RPM";
       SetMaxFanSpeedOff();
-      TrayService.fanControlTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+      // ponytail: FIX(manual keep-alive) —— 手动档不再关心跳,改由 tick 的固定档分支
+      // 每秒重申(旧实现 Change(Infinite) 只写一次 0x2E,EC 约 110s 后自行归零)。
+      TrayService.fanControlTimer?.Change(0, 1000);
       _initRpm = rpm;
     }
     _loading = true;
@@ -407,10 +409,14 @@ namespace OmenSuperHub.Pages {
         TrayService.fanControlTimer?.Change(0, 1000);
       } else if (mode == "manual") {
         Views.OsdWindow.ShowFanModeOsd(ConfigService.FanControl);
-        TrayService.fanControlTimer?.Change(Timeout.Infinite, Timeout.Infinite);
         int rpm = FanService.ParseFanRpm(ConfigService.FanControl);
-        SetFanLevel(0, 0, fan3: OmenHardware.IsThreeFan());
+        // ponytail: FIX(no-zero-dip + manual keep-alive) —— 去掉中间那次 SetFanLevel(0,0)。
+        // 0 是一次真实的 EC 写入,风扇真的会先停再爬回来(用户听到"先停一下再转",
+        // 从 46% 调到 55% 也会触发)。直接写目标档即平滑过渡。
+        // 同时保持心跳:手动档由 tick 的固定档分支每秒重申,不再关心跳。
+        SetMaxFanSpeedOff();
         SetFanLevel(rpm / 100, rpm / 100, fan3: OmenHardware.IsThreeFan());
+        TrayService.fanControlTimer?.Change(0, 1000);
       }
       // ponytail: 内置预设的风扇档(含手动/固定 RPM)是临时绑定,不持久化到预设子键——
       // 切走/重启回到预设 FanTable 默认(Extreme=cool/GpuPriority=balanced/LightUse=silent)。
@@ -498,7 +504,8 @@ namespace OmenSuperHub.Pages {
       if (val == null || val < 500 || val > 6000) { _loading = false; return; }
       int rpm = (int)val;
       SetMaxFanSpeedOff();
-      SetFanLevel(0, 0, fan3: OmenHardware.IsThreeFan());
+      // ponytail: FIX(no-zero-dip) —— 去掉 SetFanLevel(0,0) 中间态,理由同
+      // FanMode_SelectionChanged:0 是真实 EC 写入,风扇会先掉速再爬回来。
       SetFanLevel(rpm / 100, rpm / 100, fan3: OmenHardware.IsThreeFan());
       ConfigService.FanControl = rpm + " RPM";
       ConfigService.Save("FanControl");
@@ -1146,7 +1153,20 @@ namespace OmenSuperHub.Pages {
               OmenHardware.SetLegacyCleanCreek(true);
               await RunDustCleaningCountdownAsync();
             } finally {
-              try { OmenHardware.SetLegacyCleanCreek(false); } catch (Exception ex) { Logger.Error($"CleanCreek legacy restore: {ex.Message}"); }
+              // ponytail: FIX(cleancreek-restore) —— 旧实现只调 SetLegacyCleanCreek(false),
+              // 它是读-改-写单次操作且返回值被调用方丢弃:失败时方向位没清、也没有任何正转
+              // 0x2E 兜底,风扇可能永久反转(上游 issue 实测过热关机)。现在:
+              // ① 重试 + 回读校验清方向位 ② 无论成败都补一条正转 SetFanLevel 钉住方向。
+              if (!ClearLegacyCleanCreekWithRetry()) {
+                Logger.Error("[CleanCreek] SetLegacyCleanCreek(false) 重试后仍失败,风扇可能保持反转");
+              }
+              try {
+                int lvl = FanService.ResolveCleanCreekRestoreLevel(
+                    ConfigService.FanControl, FanService.GetFanSpeedForTemperature(0) / 100);
+                SetMaxFanSpeedOff();
+                SetFanLevel(lvl, lvl, fan3: OmenHardware.IsThreeFan());
+                TrayService.fanControlTimer?.Change(0, 1000);
+              } catch (Exception ex) { Logger.Error($"CleanCreek legacy restore speed: {ex.Message}"); }
             }
           });
         }
@@ -1160,8 +1180,16 @@ namespace OmenSuperHub.Pages {
               // 三扇机第 3 扇(caps[2] 支持时)同样 +128 逆转;双风机 IsThreeFan()=false 载荷不变。
               SetFanLevel(0, 0, OmenHardware.IsThreeFan(), true);
               await RunDustCleaningCountdownAsync();
-              SetFanLevel(0, 0);
             } finally {
+              // ponytail: FIX(cleancreek-restore) —— 旧实现停止写 SetFanLevel(0,0):方向回正了,
+              // 但档位是 0。心跳恢复后若首拍撞上 WMI 健康门关闭(tick 首行整拍跳过),
+              // 风扇会停在 0 档直到退避期满(最长 30s)。改为写当前模式的真实目标档。
+              try {
+                int lvl = FanService.ResolveCleanCreekRestoreLevel(
+                    ConfigService.FanControl, FanService.GetFanSpeedForTemperature(0) / 100);
+                SetMaxFanSpeedOff();
+                SetFanLevel(lvl, lvl, fan3: OmenHardware.IsThreeFan());
+              } catch (Exception ex) { Logger.Error($"CleanCreek restore speed: {ex.Message}"); }
               TrayService.fanControlTimer?.Change(0, 1000);
             }
           });
@@ -1169,6 +1197,33 @@ namespace OmenSuperHub.Pages {
       } else {
         DialogHelper.Info(Strings.CleanCreekUnsupported, Strings.Hint);
       }
+    }
+
+    /// <summary>清反转方向位:重试 3 次(200ms 间隔)并回读 bit7 校验。</summary>
+    /// <remarks>
+    /// ponytail: FIX(cleancreek-restore) —— SetLegacyCleanCreek 是"读 state → 改 bit7 →
+    /// 写回"的单次操作,任何一步失败都只返回 false(不抛)。旧调用点把返回值丢了,
+    /// 于是"没清成功"和"清成功"在日志里长得一样。这里重试并回读,失败明确记 Error。
+    /// 本机 IsLegacyCleanCreekSupported=false,此路径无法实机验证 —— 逻辑本身是纯重试,
+    /// 失败时行为 = 旧行为(仅多打一条 Error)。
+    /// </remarks>
+    static bool ClearLegacyCleanCreekWithRetry() {
+      for (int attempt = 1; attempt <= 3; attempt++) {
+        try {
+          if (OmenHardware.SetLegacyCleanCreek(false)) {
+            // 回读校验:bit7(0x80)必须已清
+            byte[] state = OmenHardware.GetLegacyCleanCreekState();
+            if (state != null && state.Length >= 4 && (state[3] & 0x80) == 0) return true;
+            Logger.Warn($"[CleanCreek] 第 {attempt} 次清除后回读仍为反转状态");
+          } else {
+            Logger.Warn($"[CleanCreek] 第 {attempt} 次 SetLegacyCleanCreek(false) 返回失败");
+          }
+        } catch (Exception ex) {
+          Logger.Warn($"[CleanCreek] 第 {attempt} 次清除异常: {ex.Message}");
+        }
+        if (attempt < 3) System.Threading.Thread.Sleep(200);
+      }
+      return false;
     }
 
     // ponytail: 除尘 UI 反馈 —— 按钮禁用 + 状态文案每秒倒计时(UI 线程 Dispatcher 后台优先级),
@@ -1210,9 +1265,10 @@ namespace OmenSuperHub.Pages {
         } else if (fc != null && fc.Contains(" RPM")) {
           int rpm = FanService.ParseFanRpm(fc);
           SetMaxFanSpeedOff();
-          SetFanLevel(0, 0, fan3: OmenHardware.IsThreeFan());
+          // ponytail: FIX(no-zero-dip + manual keep-alive) —— 同 FanMode_SelectionChanged:
+          // 去掉归零中间态,并保持心跳(旧实现关表 → EC 约 110s 自行归零)。
           SetFanLevel(rpm / 100, rpm / 100, fan3: OmenHardware.IsThreeFan());
-          TrayService.fanControlTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+          TrayService.fanControlTimer?.Change(0, 1000);
         } else {
           string table = ft == "cool" ? "cool.txt"
                        : ft == "balanced" ? "balanced.txt"

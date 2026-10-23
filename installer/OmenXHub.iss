@@ -36,7 +36,11 @@ chinesesimplified.Subscribe=订阅本项目（打开 GitHub 仓库）
 chinesetraditional.Subscribe=訂閱本項目（開啟 GitHub 儲存庫）
 
 [Files]
-Source: "{#BuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "OmenXHub.log,*.log,selftest_result.txt,cpu_temp.txt,gpu_temp.txt,custom.ico,CoreKeep.json,preset_names.txt,*.pdb,nul,FanCurves\*"
+; ponytail: NvidiaApi.dll / OmenLightingSDK.dll 是 csproj 里的 EmbeddedResource,运行时才由
+; ExtractAndPreloadNativeDll 解到 exe 目录。若打包前跑过一次 app,它们会留在 BuildDir 里
+; 被打进安装包 —— 同一份源码打出的包大小取决于"打包前有没有运行过",不可复现(实测差 198KB)。
+; 二者本来就在 exe 内部,排除后功能不受影响。
+Source: "{#BuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "OmenXHub.log,*.log,selftest_result.txt,cpu_temp.txt,gpu_temp.txt,custom.ico,CoreKeep.json,preset_names.txt,*.pdb,nul,FanCurves\*,NvidiaApi.dll,OmenLightingSDK.dll"
 Source: "License.zh-Hans.txt"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "License.zh-Hant.txt"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "License.en.txt"; DestDir: "{tmp}"; Flags: dontcopy

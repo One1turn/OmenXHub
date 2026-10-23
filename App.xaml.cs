@@ -77,7 +77,8 @@ namespace OmenSuperHub {
           + "\n" + OmenSuperHub.Views.OsdWindow.OsdKindsSelfCheck()
           + "\n" + OmenSuperHub.Pages.DashboardPage.PresetComboSyncSelfCheck()
           + "\n" + OmenSuperHub.Pages.FanPage.ChartInterpolateSelfCheck()
-          + "\n" + OmenSuperHub.Services.TouchpadLockService.SelfCheck();
+          + "\n" + OmenSuperHub.Services.TouchpadLockService.SelfCheck()
+          + "\n" + OmenSuperHub.Services.PresentMonFpsMonitor.SelfCheck();
         // ponytail: 关面板释放前端内存的自检 —— 跑完静态自检后启动一次主窗 → 导航 Dashboard
         // (热缓存 +订阅 OnPresetCycled) → Hide 触发 IsVisibleChanged→ReleaseFrontend → 反射断言
         // 三条:页面缓存清空 / PerfPage.Instance 断开 / OnPresetCycled 订阅归零。任一不成立写 FAIL。
@@ -703,6 +704,20 @@ namespace OmenSuperHub {
           var expect = Application.Current.TryFindResource(c.BrushKey) as System.Windows.Media.Brush;
           if (expect != null && barBrush != null && !ReferenceEquals(expect, barBrush))
             fails.Add(c.Name + ": bar color != " + c.BrushKey);
+
+          // ponytail: FIX(dialog-title-offset) —— 标题左移的根因是 TitleBar.Title 为空时
+          // TitleGrid 折叠,模板里绑到 Padding 的那份缩进整块消失,Header 掉到 x=0。
+          // 这里测不到真实 x(不 Show 窗口 → 模板不应用,Header 不在可视树),所以只钉住
+          // 两个能静态决定结果的属性:Title 必须非空(TitleGrid 才会保留)、右侧 Padding 必须为 0
+          // (否则 Header.x = Padding.L + Padding.R 会右移)。实测数值见 DialogHelper 注释。
+          if (titleBar != null) {
+            if (string.IsNullOrEmpty(titleBar.Title))
+              fails.Add(c.Name + ": TitleBar.Title is empty — TitleGrid collapses, header shifts left to x=0");
+            if (titleBar.Padding.Right != 0)
+              fails.Add(c.Name + ": TitleBar.Padding.Right=" + titleBar.Padding.Right + ", must be 0 (else header shifts right by that amount)");
+            if (titleBar.Padding.Left != 16)
+              fails.Add(c.Name + ": TitleBar.Padding.Left=" + titleBar.Padding.Left + ", expected 16 (content margin)");
+          }
         } catch (System.Exception ex) {
           fails.Add(c.Name + " threw " + ex.GetType().Name + ": " + ex.Message);
         }

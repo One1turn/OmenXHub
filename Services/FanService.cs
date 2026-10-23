@@ -38,8 +38,47 @@ namespace OmenSuperHub.Services {
     /// <summary>判断 FanControl 是否为固定转速 (RPM 或 % 形式)。</summary>
     public static bool IsFixedRpm(string fanControl)
       => !string.IsNullOrEmpty(fanControl) && (fanControl.Contains(" RPM") || fanControl.EndsWith("%"));
+
+    /// <summary>固定档(RPM / % / "max")对应的 EC 档位 0-100;非固定档返回 false,由曲线接管。</summary>
+    /// <remarks>
+    /// ponytail: FIX(manual keep-alive) —— fanControlTimer 的心跳必须认识固定档。
+    /// 旧实现手动档直接 Change(Infinite) 关掉心跳、只写一次 0x2E;而 tick 只有
+    /// smart/custom 与"曲线"两条分支,固定档字符串会掉进曲线分支被每秒覆盖 ——
+    /// 两难之下只能关表。实测关表后 EC 约 110s 自行归零(风扇掉速/停转)。
+    /// 现在把"固定档 → 档位"的换算收敛到这里,tick 与各处调用点共用同一口径。
+    /// </remarks>
+    public static bool TryGetFixedFanLevel(string fanControl, out int pct) {
+      pct = 0;
+      if (string.IsNullOrEmpty(fanControl)) return false;
+      if (fanControl.Contains("max")) { pct = 100; return true; }
+      if (!IsFixedRpm(fanControl)) return false;
+      // ParseFanRpm 返回「显示转速」(% 域 = 档位×100),/100 得 EC 档位
+      pct = ClampPct(ParseFanRpm(fanControl) / 100);
+      return true;
+    }
+
     static int ClampRpm(int rpm) => rpm < 500 ? 500 : rpm > 6000 ? 6000 : rpm;
     static int ClampPct(int pct) => pct < 0 ? 0 : pct > 100 ? 100 : pct;
+
+    /// <summary>除尘(反转清灰)结束后恢复正转用的档位 0-100。纯函数,便于自检。</summary>
+    /// <param name="fanControl">当前 FanControl 字符串。</param>
+    /// <param name="curveLevel">曲线档在当前温度下算出的档位;拿不到传 0 或负数。</param>
+    /// <remarks>
+    /// ponytail: FIX(cleancreek-restore) —— 反转方向由 EC 保持到下一条 0x2E 为止。
+    /// 旧实现停止时写 SetFanLevel(0,0):方向确实回正了,但**档位是 0**。随后心跳恢复,
+    /// 而 tick 首行 `if (!WmiGateOpen) return;` 在 WMI 健康门关闭时整拍跳过 ——
+    /// 风扇就停在 0 档直到退避期满(最长 30s)。改写成"按当前模式给一个真实目标档"。
+    /// 三档兜底顺序:固定档 → 曲线档 → 50%(宁可吵,不能停转)。
+    /// 注意 curveLevel 用 `> 0` 而不是 `>= 0`:GetFanSpeedForTemperature 在曲线表为空时
+    /// 返回 0 作为哨兵值,若按有效档位接受就又写出 0 档 —— 正好是本次要消灭的行为。
+    /// </remarks>
+    public static int ResolveCleanCreekRestoreLevel(string fanControl, int curveLevel) {
+      int fixedPct;
+      if (TryGetFixedFanLevel(fanControl, out fixedPct)) return fixedPct;
+      if (curveLevel > 0) return ClampPct(curveLevel);
+      // 曲线表为空 / 温度不可用 —— 兜底 50% 保证散热
+      return 50;
+    }
 
     /// <summary>--selftest: 双标尺往返 —— % 域不再被 RPM 钳位饱和(回归捕获点)。</summary>
     public static string SelfCheck() {
@@ -59,6 +98,56 @@ namespace OmenSuperHub.Services {
       Check("9999 RPM", 6000); // RPM 上限
       Check("garbage", 2500);  // def 兜底
       Check("25%", 2500);      // 标尺交界: 两解析同值
+
+      // ponytail: FIX(manual keep-alive) —— tick 的固定档分支靠这个换算取档位。
+      // 它错了就是"手动档每秒写错转速",比掉速更难查,所以钉死:
+      //   固定档 → true + EC 档位(0-100);曲线/自动档 → false(交给曲线分支)。
+      void CheckLvl(string fc, bool wantOk, int wantPct) {
+        bool ok = TryGetFixedFanLevel(fc, out int pct);
+        if (ok != wantOk || (ok && pct != wantPct))
+          _scFail.Add($"TryGetFixedFanLevel(\"{fc}\") = ({ok}, {pct}), want ({wantOk}, {wantPct})");
+      }
+      CheckLvl("4000 RPM", true, 40);   // 4000 显示转速 → EC 档位 40
+      CheckLvl("5500 RPM", true, 55);
+      CheckLvl("100 RPM", true, 5);     // 被 ClampRpm 钳到 500 → 档位 5
+      CheckLvl("9999 RPM", true, 60);   // 钳到 6000 → 档位 60
+      CheckLvl("80%", true, 80);        // % 域: ParseFanRpm=8000 → /100 = 80
+      CheckLvl("100%", true, 100);
+      CheckLvl("0%", true, 0);
+      CheckLvl("150%", true, 100);      // 越界钳 100
+      CheckLvl("max", true, 100);       // 旧版遗留形态
+      CheckLvl("", false, 0);           // 自动表 → 曲线接管
+      CheckLvl("auto", false, 0);
+      CheckLvl("smart", false, 0);
+      CheckLvl("custom", false, 0);
+      CheckLvl("silent", false, 0);     // 预设表名也不是固定档
+      CheckLvl("garbage", false, 0);    // 非法串不得被当成固定档写硬件
+
+      // ponytail: FIX(cleancreek-restore) —— 除尘停止档位换算。
+      // 它错了就是"清灰结束后风扇停转/暴转",而这条路径本机不支持、无法实机验证,
+      // 所以纯函数部分必须钉死:固定档优先 → 曲线档次之 → 50% 兜底。
+      void CheckCc(string fc, int curve, int want) {
+        int got = ResolveCleanCreekRestoreLevel(fc, curve);
+        if (got != want) _scFail.Add($"ResolveCleanCreekRestoreLevel(\"{fc}\", {curve}) = {got}, want {want}");
+      }
+      CheckCc("3000 RPM", -1, 30);      // 固定 RPM 优先于曲线
+      CheckCc("3000 RPM", 80, 30);      // 即便曲线可用也走固定档
+      CheckCc("80%", -1, 80);
+      CheckCc("max", -1, 100);
+      CheckCc("smart", 45, 45);         // 曲线档用实时算出的档位
+      CheckCc("", 45, 45);
+      CheckCc("silent", 62, 62);
+      CheckCc("smart", -1, 50);         // 曲线拿不到 → 50% 兜底,绝不停转
+      CheckCc("", -1, 50);
+      CheckCc("garbage", -1, 50);       // 非法串同样兜底,不写 0
+      CheckCc("smart", 150, 100);       // 越界钳到 100
+      CheckCc("smart", -5, 50);         // 负值视为不可用 → 兜底
+      // 关键回归点:GetFanSpeedForTemperature 空表时返回 0 作哨兵,
+      // 若按有效档位接受就会写出 0 档 —— 正是本次要消灭的行为。
+      CheckCc("smart", 0, 50);
+      CheckCc("", 0, 50);
+      CheckCc("silent", 0, 50);
+
       return _scFail.Count == 0 ? "PASS FanService dual-scale parse"
         : "FAIL:\n  " + string.Join("\n  ", _scFail);
     }

@@ -12,6 +12,9 @@ namespace OmenSuperHub.Services {
     const double SampleWindowSeconds = 1.5;
     static readonly TimeSpan CleanupInterval = TimeSpan.FromMilliseconds(500);
     static readonly TimeSpan StartFailureRetryInterval = TimeSpan.FromSeconds(10);
+    /// <summary>同 PID 的最小解析间隔 —— FPS 是 1.5s 窗口平均值,200ms 采样足够。</summary>
+    static readonly TimeSpan MinParseIntervalPerPid = TimeSpan.FromMilliseconds(200);
+    readonly Dictionary<int, DateTime> _lastParseUtc = new Dictionary<int, DateTime>();
 
     struct FpsSample {
       public DateTime TimestampUtc;
@@ -119,6 +122,7 @@ namespace OmenSuperHub.Services {
         msBetweenPresentsColumnIndex = -1;
         windowsByProcessId.Clear();
         windowsByApplication.Clear();
+        _lastParseUtc.Clear();
         activeProcessNameFilter = normalizedProcessNameFilter;
         trackedProcessId = 0;
         trackedProcessName = normalizedProcessNameFilter;
@@ -142,6 +146,7 @@ namespace OmenSuperHub.Services {
         presentMonProcess = null;
         windowsByProcessId.Clear();
         windowsByApplication.Clear();
+        _lastParseUtc.Clear();
         headerParsed = false;
         activeProcessNameFilter = string.Empty;
         trackedProcessId = 0;
@@ -267,11 +272,24 @@ namespace OmenSuperHub.Services {
           if (processIdColumnIndex >= 0 && applicationColumnIndex >= 0 && msBetweenPresentsColumnIndex >= 0) headerParsed = true;
           return;
         }
+        // ponytail: PERF(fps-parse-throttle) —— PresentMon --output_stdout 每帧一行 CSV。
+        // 帧率按 1.5s 窗口统计(msBetweenPresents 求平均),200ms 内同 PID 只取一行
+        // 不影响 FPS 数值,只降采样密度。节流必须在 TryExtract **之前**:实测
+        // TryExtract 占整条路径 71%(0.83/1.17 us),放在其后只能省 29%。
+        // 廉价 PID 预扫描:行首是 Application(通常不带引号),PID 是第二列。
+        // 带引号的行(应用名含逗号)返回 false → 不节流,直接走完整解析,行为不变。
+        // 天花板: 每个 PID 一个字典项,进程退出后靠 CleanupStaleSamples 之外的
+        // _lastParseUtc 只增不减 —— 数量级=同时出现的 PID 数(几十),可忽略。
+        var now = DateTime.UtcNow;
+        if (TryPeekPid(line, out int peekPid)) {
+          if (_lastParseUtc.TryGetValue(peekPid, out var lastParse)
+              && (now - lastParse) < MinParseIntervalPerPid) return;
+          _lastParseUtc[peekPid] = now;
+        }
         if (!TryExtract(line, out int pid, out string app, out double ms)) return;
         if (pid <= 0 || ms <= 0) return;
         string norm = NormalizeProcessName(app);
         if (!string.IsNullOrWhiteSpace(activeProcessNameFilter) && !string.Equals(activeProcessNameFilter, norm, StringComparison.OrdinalIgnoreCase)) return;
-        var now = DateTime.UtcNow;
         if (!windowsByProcessId.TryGetValue(pid, out var w)) { w = new FpsWindow(); windowsByProcessId[pid] = w; }
         w.Application = app;
         w.NormalizedApplication = norm;
@@ -281,6 +299,18 @@ namespace OmenSuperHub.Services {
         if (!string.IsNullOrWhiteSpace(norm)) windowsByApplication[norm] = w;
         CleanupWindow(w, now);
       }
+    }
+
+    /// <summary>从行首廉价取 PID(第二列)。行首带引号(应用名含逗号)时返回 false,
+    /// 由调用方回退到完整解析 —— 宁可不节流,不能取错 PID。</summary>
+    static bool TryPeekPid(string line, out int pid) {
+      pid = 0;
+      if (string.IsNullOrEmpty(line) || line[0] == '"') return false;
+      int c1 = line.IndexOf(',');
+      if (c1 <= 0) return false;
+      int c2 = line.IndexOf(',', c1 + 1);
+      if (c2 <= c1 + 1) return false;
+      return int.TryParse(line.Substring(c1 + 1, c2 - c1 - 1).Trim(), NumberStyles.Integer, CultureInfo.InvariantCulture, out pid) && pid > 0;
     }
 
     bool TryExtract(string line, out int pid, out string app, out double ms) {
@@ -365,6 +395,43 @@ namespace OmenSuperHub.Services {
       v = v.Trim();
       if (v.Length >= 2 && v[0] == '"' && v[v.Length - 1] == '"') v = v.Substring(1, v.Length - 2).Replace("\"\"", "\"");
       return v;
+    }
+
+    /// <summary>--selftest: PID 预扫描 + 节流决策 —— 纯函数,不启 PresentMon。</summary>
+    /// <remarks>
+    /// ponytail: 节流把"每帧一行"降到"每 PID 每 200ms 一行"。它错了两头都有害:
+    /// 取错 PID 会让不同应用互相节流(FPS 掉),不节流则白花解析。所以钉死:
+    ///   正常行 → 取到第二列 PID;带引号行(应用名含逗号) → false(回退完整解析)。
+    /// </remarks>
+    internal static string SelfCheck() {
+      var fail = new List<string>();
+      int pid;
+
+      if (!TryPeekPid("game.exe,1234,0x0,DXGI,1,0,0,Hardware: Legacy Flip,1.0", out pid) || pid != 1234)
+        fail.Add("TryPeekPid 正常行应得 1234, got " + pid);
+      if (!TryPeekPid("dwm.exe,42,x", out pid) || pid != 42)
+        fail.Add("TryPeekPid 短行应得 42, got " + pid);
+      // 行首带引号 = 应用名含逗号,列偏移不可信 → 必须放弃预扫描。
+      // 这个样本在漏掉引号检查时会被误判成 PID=999(真实 PID 是 1234)。
+      if (TryPeekPid("\"x,999,y\",1234,rest", out pid))
+        fail.Add("TryPeekPid 带引号行必须返回 false(否则按错列取 PID=999), got " + pid);
+      if (TryPeekPid("noCommasAtAll", out pid))
+        fail.Add("TryPeekPid 无逗号行必须返回 false");
+      if (TryPeekPid("app.exe,notanumber,x", out pid))
+        fail.Add("TryPeekPid 非数字 PID 必须返回 false");
+      if (TryPeekPid("app.exe,0,x", out pid))
+        fail.Add("TryPeekPid PID=0 必须返回 false");
+      if (TryPeekPid("", out pid))
+        fail.Add("TryPeekPid 空串必须返回 false");
+      if (TryPeekPid(null, out pid))
+        fail.Add("TryPeekPid null 必须返回 false");
+
+      // 节流间隔必须短于统计窗口,否则窗口内样本太少会让 FPS 抖动
+      if (MinParseIntervalPerPid.TotalMilliseconds >= SampleWindowSeconds * 1000 / 3)
+        fail.Add("节流间隔过长: " + MinParseIntervalPerPid.TotalMilliseconds + "ms vs 窗口 " + (SampleWindowSeconds * 1000) + "ms");
+
+      return fail.Count == 0 ? "PASS PresentMonFpsMonitor throttle"
+        : "FAIL:\n  " + string.Join("\n  ", fail);
     }
   }
 }

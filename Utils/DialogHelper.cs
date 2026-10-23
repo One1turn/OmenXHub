@@ -140,9 +140,19 @@ namespace OmenSuperHub.Utils {
       // ponytail: 用真 ui:TitleBar 而不是自绘 Border —— 自绘版没有拖拽区(WM_NCHITTEST 归 HTCAPTION
       // 的逻辑在 TitleBar 内部)。Header 必须 IsHitTestVisible=False,否则鼠标压在内容上就不发 HTCAPTION。
       // 模态提示框不给关闭 X:必须点按钮或 Esc,避免"关掉了但不知道结果"。
+      //
+      // ponytail: FIX(dialog-title-offset) —— 这里**必须**给 Title 赋值,即使 Header 里已经有标题文本。
+      // 实测(Wpf.Ui 3.1.1,真窗口+模板已应用):
+      //   Title=null              → TitleGrid Collapsed,Padding 完全失效,Header.x = 0  (左移 16px)
+      //   Title="错误" + Pad(16,0,16,0) → TitleGrid Visible,Header.x = 16+16 = 32        (右移 16px)
+      //   Title="错误" + Pad(16,0,0,0)  → Header.x = 16                                  ✓
+      // 原因是模板把 TitleGrid 的 Margin 绑到 Padding,Header 又排在 TitleGrid 之后;
+      // Title/Icon 都为空时 TitleGrid 折叠,那份 Padding 就整块消失了。
+      // Title 本身在 Header 非空时不渲染(Header 覆盖显示区),纯粹是"让 TitleGrid 活着"的开关。
       var titleBar = new Wpf.Ui.Controls.TitleBar {
+        Title = title,
         ShowMinimize = false, ShowMaximize = false, ShowClose = false,
-        Height = 44, Padding = new Thickness(16, 0, 16, 0),
+        Height = 44, Padding = new Thickness(16, 0, 0, 0),
         Header = new StackPanel {
           Orientation = Orientation.Horizontal,
           IsHitTestVisible = false,

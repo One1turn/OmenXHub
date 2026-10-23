@@ -619,17 +619,18 @@ namespace OmenSuperHub.Services {
             byte speed = (byte)(rpm / 100);
             if (speed < 0) speed = 0; if (speed > 100) speed = 100;
             OmenHardware.SetMaxFanSpeedOff();
-            OmenHardware.SetFanLevel(0, 0, fan3: OmenHardware.IsThreeFan());
+            // ponytail: FIX(no-zero-dip + manual keep-alive) —— 去掉归零中间态,
+            // 并保持每秒心跳(旧实现关表 → EC 约 110s 自行归零,风扇掉速)。
             OmenHardware.SetFanLevel(speed, speed, fan3: OmenHardware.IsThreeFan());
-            TrayService.fanControlTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+            TrayService.fanControlTimer?.Change(0, 1000);
           } else if (fc != null && fc.EndsWith("%") && int.TryParse(fc.TrimEnd('%'), out int pct)) {
-            // ponytail: 固定百分比档 —— 与 RestoreFanSettings 的 % 分支同语义(停心跳 +
-            // 直写 pct 档位)。旧版 "%" 落下方 else 被当 auto 曲线表处理,预设切换与
-            // 重启恢复行为不一致。非法 % 值仍落 else 走 auto 表(有兜底的风扇控制)。
+            // ponytail: 固定百分比档 —— 与 RestoreFanSettings 的 % 分支同语义。
+            // FIX(manual keep-alive): 保持每秒心跳,不再关定时器 —— 实测关掉后 EC 约
+            // 110s 自行把档位归 0(风扇掉速/停转),这是"开到 5500 转一会就降速"的根因。
             pct = pct < 0 ? 0 : pct > 100 ? 100 : pct;
             OmenHardware.SetMaxFanSpeedOff();
             OmenHardware.SetFanLevel(pct, pct, fan3: OmenHardware.IsThreeFan());
-            TrayService.fanControlTimer?.Change(Timeout.Infinite, Timeout.Infinite);
+            TrayService.fanControlTimer?.Change(0, 1000);
           } else {
             // ponytail: 按 FanTable 选用全局曲线文件 —— cool/silent/balanced 三档平级。
             // balanced.txt = G-Helper Balanced (主要给 GpuPriority 预设用)。

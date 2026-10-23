@@ -396,14 +396,12 @@ namespace OmenSuperHub.Services {
           SetMaxFanSpeedOff();
           OmenHardware.SetFanLevel(pct, pct, fan3: OmenHardware.IsThreeFan());
           Views.OsdWindow.ShowFanModeOsd(pct + "%");
-          // ponytail: 停表是 manual 档的不变式 —— 不停则 tick 的 else 分支每秒用曲线值
-          // 覆盖手动档(FanControl="45%" 落不进 tick 的 smart/custom 分支)。Startup 触发器
-          // 可在 timer 建好前到达(见上方注释),此时停不掉:留日志而不是静默,让"手动档
-          // 开机后被曲线接管"这个短暂窗口可诊断;手动档已由上方 SetFanLevel 写入 EC,
-          // timer 首拍 100ms 后的确会接管 —— 该窗口的根治要靠启动序(timer 先于 Automation
-          // 初始化),超出本方法职责。
+          // ponytail: FIX(manual keep-alive) —— 手动档改由心跳重申,不再停表。
+          // 旧实现 Change(Infinite) 只写一次 0x2E(EC 约 110s 自行归零),且 tick 的 else
+          // 分支会用曲线值覆盖手动档 —— 现已给 tick 加了固定档分支(见 TrayService)。
+          // Startup 触发器可在 timer 建好前到达,此时留日志而不是静默。
           if (TrayService.fanControlTimer != null)
-            TrayService.fanControlTimer.Change(Timeout.Infinite, Timeout.Infinite);
+            TrayService.fanControlTimer.Change(0, 1000);
           else
             Logger.Warn("[Automation] SetFanMode manual: fanControlTimer 未就绪,手动档可能在 ~100ms 内被 tick 接管");
         }

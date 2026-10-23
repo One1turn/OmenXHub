@@ -827,14 +827,15 @@ namespace OmenSuperHub.Services {
           FanService.InitSmartFanState(ConfigService.SmartFanEmaAlpha);
           FanService.ApplyPresetCurve(ConfigService.Preset);
         } else if (mode == "manual") {
-          // 同 UI manual 分支: 停自动 timer, 把最后保存的 RPM 原样重写(0,0→目标 三步序列), 远程不接新转速值。
+          // 同 UI manual 分支: 把最后保存的 RPM 原样重写, 远程不接新转速值。
           int rpm = FanService.ParseFanRpm(ConfigService.FanControl);
           ConfigService.FanControl = rpm + " RPM";
           ConfigService.Save("FanControl");
           OmenHardware.SetMaxFanSpeedOff();
-          TrayService.fanControlTimer?.Change(System.Threading.Timeout.Infinite, System.Threading.Timeout.Infinite);
-          OmenHardware.SetFanLevel(0, 0, fan3: OmenHardware.IsThreeFan());
+          // ponytail: FIX(no-zero-dip + manual keep-alive) —— 去掉归零中间态,并保持心跳
+          // (旧实现关表 + 0,0 中间态:风扇先停一下,且 EC 约 110s 自行归零)。
           OmenHardware.SetFanLevel(rpm / 100, rpm / 100, fan3: OmenHardware.IsThreeFan());
+          TrayService.fanControlTimer?.Change(0, 1000);
           Logger.Info($"API: SetFanMode(manual, hold {rpm} RPM)");
           return (200, "{\"success\":true,\"message\":\"Fan mode: manual (" + rpm + " RPM)\"}");
         } else {
