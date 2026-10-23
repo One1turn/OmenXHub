@@ -40,7 +40,9 @@ chinesetraditional.Subscribe=訂閱本項目（開啟 GitHub 儲存庫）
 ; ExtractAndPreloadNativeDll 解到 exe 目录。若打包前跑过一次 app,它们会留在 BuildDir 里
 ; 被打进安装包 —— 同一份源码打出的包大小取决于"打包前有没有运行过",不可复现(实测差 198KB)。
 ; 二者本来就在 exe 内部,排除后功能不受影响。
-Source: "{#BuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "OmenXHub.log,*.log,selftest_result.txt,cpu_temp.txt,gpu_temp.txt,custom.ico,CoreKeep.json,preset_names.txt,*.pdb,nul,FanCurves\*,NvidiaApi.dll,OmenLightingSDK.dll"
+; PresentMon.exe 也排除:csproj 已把它 CopyToOutputDirectory 到 BuildDir,会让通配符捎带一份;
+; 下面 [Files] 有它自己的显式条目(从仓库根拷),排除掉才能保证包里只有一份。
+Source: "{#BuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "OmenXHub.log,*.log,selftest_result.txt,cpu_temp.txt,gpu_temp.txt,custom.ico,CoreKeep.json,preset_names.txt,*.pdb,nul,FanCurves\*,NvidiaApi.dll,OmenLightingSDK.dll,PresentMon.exe"
 Source: "License.zh-Hans.txt"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "License.zh-Hant.txt"; DestDir: "{tmp}"; Flags: dontcopy
 Source: "License.en.txt"; DestDir: "{tmp}"; Flags: dontcopy

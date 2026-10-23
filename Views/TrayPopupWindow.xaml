@@ -3,6 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
 	        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
 	        xmlns:app="clr-namespace:OmenSuperHub"
+	        xmlns:controls="clr-namespace:OmenSuperHub.Controls"
 	        Width="328"
         WindowStyle="None" AllowsTransparency="True"
         Background="Transparent" Topmost="True"
@@ -99,9 +100,11 @@
                    Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
 
         <!-- GPU -->
+        <!-- ponytail: Video24 是摄像机图形,和 GPU 无关。改用 DashboardPage:169(GPU 卡头)/
+             PerfPage:739(GPU 组头)同款 DeviceEq24 —— 全仓的 GPU 语义图标就这一个。 -->
         <ui:SymbolIcon x:Name="GpuIcon"
                        Grid.Row="2" Grid.Column="0"
-                       Symbol="Video24" FontSize="20"
+                       Symbol="DeviceEq24" FontSize="20"
                        VerticalAlignment="Center" Margin="0,8,0,0"
                        Foreground="{StaticResource IconAccentBrush}"/>
 	        <TextBlock x:Name="GpuLabel"
@@ -119,11 +122,13 @@
                    Foreground="{DynamicResource TextFillColorPrimaryBrush}"/>
 
         <!-- Fan -->
-        <ui:SymbolIcon x:Name="FanIcon"
-                       Grid.Row="3" Grid.Column="0"
-                       Symbol="Pulse24" FontSize="20"
-                       VerticalAlignment="Center" Margin="0,8,0,0"
-                       Foreground="{StaticResource IconAccentBrush}"/>
+        <!-- ponytail: 用侧栏同一个 controls:FanIcon(与 NavFan 同源),不再是 Pulse24 —— 心率波形
+             和风扇没有语义关系,侧栏已用弯刀叶片图标,此处对齐。IconElement 无 FontSize,改用 IconSize。 -->
+        <controls:FanIcon x:Name="FanIcon"
+                          Grid.Row="3" Grid.Column="0"
+                          IconSize="20"
+                          VerticalAlignment="Center" Margin="0,8,0,0"
+                          Foreground="{StaticResource IconAccentBrush}"/>
         <TextBlock x:Name="FanLabelText"
                    Grid.Row="3" Grid.Column="1"
                    FontSize="{DynamicResource FontSizeSubtitle}" FontWeight="Medium"

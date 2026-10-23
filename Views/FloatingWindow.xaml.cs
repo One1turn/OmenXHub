@@ -30,6 +30,11 @@ namespace OmenSuperHub.Views {
     static readonly object _fpsLock = new object();
     static int _fpsGeneration;
 
+    /// <summary>只读借出当前的 FPS 监控实例(不转移所有权,调用方不得 Dispose)。
+    /// HTTP API 想复用同一个 PresentMon —— 否则 WebUI 与 OSD 同时开着就是两个 PresentMon
+    /// 各跑一份 ETW 解析,白烧 CPU 且两处数值不完全一致。</summary>
+    internal static PresentMonFpsMonitor TryGetSharedFpsMonitor() { lock (_fpsLock) return _fpsMonitor; }
+
     // ponytail: Dispose PresentMon off UI thread — Stop() does Kill+WaitForExit(1000) which would block the render
     static void DisposeFpsMonitorAsync() {
       PresentMonFpsMonitor m;

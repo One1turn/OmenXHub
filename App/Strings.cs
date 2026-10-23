@@ -127,7 +127,7 @@ namespace OmenSuperHub {
     public static string HelpBtnCheckUpdate => T("检查更新", "檢查更新", "Check Updates");
     public static string HelpCreditsSub => T("开发者 & 致谢", "開發者 & 致謝", "Developers & Credits");
     public static string HelpDonateSub => T("支持作者", "支持作者", "Support the Author");
-    public static string HelpDonateIntro => T("OMEN X Hub 是一个免费开源项目,完全由个人在业余时间维护。如果它对你的日常使用或开发有帮助,欢迎请作者喝杯咖啡 ☕", "OMEN X Hub 是一個免費開源專案,完全由個人在業餘時間維護。如果它對你的日常使用或開發有幫助,歡迎請作者喝杯咖啡 ☕", "OMEN X Hub is a free, open-source project maintained in the author's spare time. If it helps your daily use or development, consider buying the author a coffee ☕");
+    public static string HelpDonateIntro => T("OMEN X Hub 是一个免费开源项目,完全在业余时间维护。如果它对你的日常使用或开发有帮助,欢迎请作者喝杯咖啡 ☕", "OMEN X Hub 是一個免費開源專案,完全在業餘時間維護。如果它對你的日常使用或開發有幫助,歡迎請作者喝杯咖啡 ☕", "OMEN X Hub is a free, open-source project maintained in the author's spare time. If it helps your daily use or development, consider buying the author a coffee ☕");
     // ponytail: 两行只留名字 —— 括号里的身份说明已按用户要求去掉;
     // 第一行指向 GitHub Sponsors,第二行指向维护者主页,链接本身区分身份。
     public static string HelpDonateOriginalAuthor => T("MasonDye", "MasonDye", "MasonDye");

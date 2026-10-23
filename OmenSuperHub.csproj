@@ -161,6 +161,12 @@
     <EmbeddedResource Include="Resources\webui.html" />
   </ItemGroup>
 
+  <!-- PresentMon.exe: FPS 采样器。OSD 浮窗与 HTTP API 的 /api/fps 都要用,找不到就静默没有 FPS。
+       装机版由 installer 单独拷到 {app};这条让开发构建的输出目录也带上它。 -->
+  <ItemGroup>
+    <None Include="PresentMon.exe" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <!-- Resource (Fluent Icons) -->
   <ItemGroup>
     <Resource Include="Resources\Fonts\FluentSystemIcons-Regular.ttf" />

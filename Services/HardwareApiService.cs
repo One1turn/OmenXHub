@@ -77,7 +77,31 @@ namespace OmenSuperHub.Services {
       try { _listener?.Close(); } catch { }
       try { _listenTask?.Wait(2000); } catch { }
       try { RemoveFirewallRule(); } catch { }
+      // ponytail: API 自持的 FPS 监控随服务一起收 —— 否则关了 HTTP API 还留着个 PresentMon 长跑。
+      PresentMonFpsMonitor own; lock (_fpsOwnLock) { own = _fpsOwn; _fpsOwn = null; }
+      if (own != null) try { own.Dispose(); } catch { }
       Logger.Info("HardwareApiService stopped");
+    }
+
+    // ═══ FPS 数据源(WebUI 用) ═══
+    // ponytail: 优先借 OSD 浮窗那个正在跑的实例,避免两个 PresentMon 重复解析；没人借时
+    // API 自持一个,生存期与 HTTP API 相同。天花板: 开着 API 且访问过 /api/fps 之后,
+    // PresentMon 会一直活到 API 关闭(没有空闲回收)—— 要省电就在无人访问 N 秒后 Dispose。
+    static PresentMonFpsMonitor _fpsOwn;
+    static readonly object _fpsOwnLock = new object();
+
+    static PresentMonFpsMonitor AcquireFpsMonitor() {
+      var shared = Views.FloatingWindow.TryGetSharedFpsMonitor();
+      if (shared != null && shared.IsRunning) return shared;
+      lock (_fpsOwnLock) {
+        if (_fpsOwn == null) {
+          var m = new PresentMonFpsMonitor();
+          try { m.EnsureRunning("", out _); }
+          catch (Exception ex) { Logger.Error($"API FPS monitor start: {ex.Message}"); }
+          _fpsOwn = m;
+        }
+        return _fpsOwn;
+      }
     }
 
     // ═══════════════════════════════════════════════════════
@@ -290,6 +314,10 @@ namespace OmenSuperHub.Services {
           statusCode = result.code;
         } else if (method == "POST" && path == "/api/system/display/off") {
           var result = HandleSystemDisplayOff();
+          responseText = result.body;
+          statusCode = result.code;
+        } else if (method == "GET" && path == "/api/fps") {
+          var result = HandleGetFps();
           responseText = result.body;
           statusCode = result.code;
         }
@@ -956,6 +984,21 @@ namespace OmenSuperHub.Services {
       } catch (Exception ex) { Logger.Error($"HandleSystemShutdown: {ex.Message}"); return (500, MakeError(ex.Message)); }
     }
 
+    // ── /api/fps ── 只读:WebUI 的 FPS 卡(实时 FPS + 1% low + 当前应用)。
+    // 首次调用会拉起 PresentMon(见 AcquireFpsMonitor)。running 如实回报 —— 没有前台游戏时
+    // 前端显示「未监控」而不是一个会误导人的 0。
+    private static (int code, string body) HandleGetFps() {
+      try {
+        var m = AcquireFpsMonitor();
+        if (m == null) return (200, "{\"running\":false,\"fps\":0,\"fpsLow\":0,\"app\":\"\"}");
+        m.Poll();
+        string app;
+        try { app = string.IsNullOrWhiteSpace(m.LastApp) ? "" : System.IO.Path.GetFileNameWithoutExtension(m.LastApp); }
+        catch { app = m.LastApp ?? ""; }
+        return (200, $"{{\"running\":{(m.IsRunning ? "true" : "false")},\"fps\":{m.LastFps},\"fpsLow\":{m.LastFpsLow},\"app\":\"{EscapeJson(app)}\"}}");
+      } catch (Exception ex) { Logger.Error($"HandleGetFps: {ex.Message}"); return (500, MakeError(ex.Message)); }
+    }
+
     // ── /api/system/display/off ── 关闭显示器。任何键鼠输入即唤醒, 无损可逆, 故不要求 confirm;
     // 与 PerfPage「关闭显示器」按钮共用 NativeMethods_Display.TurnOffDisplay。
     private static (int code, string body) HandleSystemDisplayOff() {
@@ -1070,7 +1113,7 @@ namespace OmenSuperHub.Services {
       "/api/mode", "/api/cpu/load", "/api/cpu/frequency", "/api/cpu/power/current",
       "/api/gpu/load", "/api/gpu/frequency", "/api/gpu/memory", "/api/gpu/offset/current",
       "/api/battery", "/api/memory", "/api/hardware/all", "/api/system/info", "/api/system/uptime",
-      "/api/lighting/status",
+      "/api/lighting/status", "/api/fps",
     };
     static readonly System.Collections.Generic.HashSet<string> LanWritePaths = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase) {
       "/api/mode", "/api/fan/mode", "/api/memory/clean", "/api/system/display/off",
@@ -1212,6 +1255,7 @@ namespace OmenSuperHub.Services {
         "{\"method\":\"GET\",\"path\":\"/api/hardware/all\",\"description\":\"All hardware data\"}",
         "{\"method\":\"GET\",\"path\":\"/api/system/info\",\"description\":\"System information\"}",
         "{\"method\":\"GET\",\"path\":\"/api/system/uptime\",\"description\":\"System uptime\"}",
+        "{\"method\":\"GET\",\"path\":\"/api/fps\",\"description\":\"Foreground app FPS + 1% low\"}",
         "{\"method\":\"GET\",\"path\":\"/api/lighting/status\",\"description\":\"Keyboard lighting status\"}",
         "{\"method\":\"POST\",\"path\":\"/api/fan/speed\",\"description\":\"Set fan speed\"}",
         "{\"method\":\"POST\",\"path\":\"/api/fan/curve\",\"description\":\"Set fan curve\"}",
@@ -1379,6 +1423,9 @@ namespace OmenSuperHub.Services {
       Check("allow-fanmode-read", IsLanAllowed("GET", "/api/fan/mode"));
       // 内存: 读监控放行, 清理属无损维护动作(WebUI 按钮要用)故放行。
       Check("allow-memory-read", IsLanAllowed("GET", "/api/memory"));
+      // FPS: 纯监控读(WebUI 的 FPS 卡), 不改变机器状态, 放行; 非 GET 一律拒。
+      Check("allow-fps-read", IsLanAllowed("GET", "/api/fps"));
+      Check("deny-fps-post", !IsLanAllowed("POST", "/api/fps"));
       Check("allow-memoryclean-write", IsLanAllowed("POST", "/api/memory/clean"));
       // 关屏无损可逆(任何输入唤醒), 放行; 重启/关机必须仍拒。
       Check("allow-displayoff-write", IsLanAllowed("POST", "/api/system/display/off"));

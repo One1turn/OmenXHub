@@ -14,6 +14,13 @@ namespace OmenSuperHub.Services {
     static readonly TimeSpan StartFailureRetryInterval = TimeSpan.FromSeconds(10);
     /// <summary>同 PID 的最小解析间隔 —— FPS 是 1.5s 窗口平均值,200ms 采样足够。</summary>
     static readonly TimeSpan MinParseIntervalPerPid = TimeSpan.FromMilliseconds(200);
+    /// <summary>1% low 的累计窗口。1.5s 在 60fps 下只有 ~90 帧,"最慢 1%" 会退化成 1 帧,
+    /// 每拍数值乱跳 —— 10s 才够 ~600-1400 帧,1% ≈ 6-14 帧,才是个能读的指标。
+    /// static readonly 而非 const:自检里要能对它做运行期断言,const 会让那行变成不可达代码(CS0162)。</summary>
+    static readonly double LowWindowSeconds = 10;
+    /// <summary>低帧分位:1% low = 最慢 1% 帧的平均帧时间取倒数(与 Afterburner/CapFrameX 同口径)。</summary>
+    const double LowPercentile = 0.01;
+    readonly List<double> _lowScratch = new List<double>();
     readonly Dictionary<int, DateTime> _lastParseUtc = new Dictionary<int, DateTime>();
 
     struct FpsSample {
@@ -27,6 +34,8 @@ namespace OmenSuperHub.Services {
       public DateTime LastSeenUtc;
       public Queue<FpsSample> Samples = new Queue<FpsSample>();
       public double SampleTotalMs;
+      /// <summary>与 Samples 同一批帧, 但保留 10s —— 1% low 不能用 1.5s 窗口(见 LowWindowSeconds)。</summary>
+      public Queue<FpsSample> LowSamples = new Queue<FpsSample>();
     }
 
     readonly object syncRoot = new object();
@@ -49,9 +58,12 @@ namespace OmenSuperHub.Services {
     DateTime nextStartAttemptUtc = DateTime.MinValue;
     DateTime nextCleanupUtc = DateTime.MinValue;
     int _lastFps;
+    int _lastFpsLow;
     string _lastApp;
 
     public int LastFps { get { lock (syncRoot) { return _lastFps; } } }
+    /// <summary>1% low(见 LowPercentile)。0 = 暂无数据。</summary>
+    public int LastFpsLow { get { lock (syncRoot) { return _lastFpsLow; } } }
     public string LastApp { get { lock (syncRoot) { return _lastApp; } } }
 
     public bool IsRunning {
@@ -175,6 +187,7 @@ namespace OmenSuperHub.Services {
           if (trackedProcessId > 0 && windowsByProcessId.TryGetValue(trackedProcessId, out var w) && TryComputeFps(w, out float fps)) {
             _lastFps = (int)Math.Round(fps);
             _lastApp = w.Application ?? "";
+            _lastFpsLow = ComputeWindowLow(w);
             return;
           }
         } else {
@@ -182,10 +195,12 @@ namespace OmenSuperHub.Services {
           if (!string.IsNullOrWhiteSpace(trackedProcessName) && windowsByApplication.TryGetValue(trackedProcessName, out var w) && (DateTime.UtcNow - w.LastSeenUtc).TotalSeconds <= SampleWindowSeconds && TryComputeFps(w, out float fps)) {
             _lastFps = (int)Math.Round(fps);
             _lastApp = w.Application ?? "";
+            _lastFpsLow = ComputeWindowLow(w);
             return;
           }
         }
         _lastFps = 0;
+        _lastFpsLow = 0;
       }
     }
 
@@ -296,6 +311,7 @@ namespace OmenSuperHub.Services {
         w.LastSeenUtc = now;
         w.Samples.Enqueue(new FpsSample { TimestampUtc = now, MsBetweenPresents = ms });
         w.SampleTotalMs += ms;
+        w.LowSamples.Enqueue(new FpsSample { TimestampUtc = now, MsBetweenPresents = ms });
         if (!string.IsNullOrWhiteSpace(norm)) windowsByApplication[norm] = w;
         CleanupWindow(w, now);
       }
@@ -366,6 +382,31 @@ namespace OmenSuperHub.Services {
         var s = w.Samples.Dequeue(); w.SampleTotalMs -= s.MsBetweenPresents;
       }
       if (w.SampleTotalMs < 0) w.SampleTotalMs = 0;
+      // 1% low 的样本活得更久, 单独按 10s 淘汰
+      while (w.LowSamples.Count > 0 && (now - w.LowSamples.Peek().TimestampUtc).TotalSeconds > LowWindowSeconds)
+        w.LowSamples.Dequeue();
+    }
+
+    /// <summary>1% low:把帧时间升序排序后取最慢 pct 比例那一段的平均,再取倒数。
+    /// 就地排序传入的列表 —— 调用方复用同一个缓冲,免得每秒分配一个 List。</summary>
+    internal static int ComputeLowFps(List<double> frameMs, double pct) {
+      if (frameMs == null || frameMs.Count == 0) return 0;
+      if (pct <= 0) pct = LowPercentile;
+      frameMs.Sort();
+      int n = (int)Math.Ceiling(frameMs.Count * pct);
+      if (n < 1) n = 1;
+      if (n > frameMs.Count) n = frameMs.Count;
+      double sum = 0;
+      for (int i = frameMs.Count - n; i < frameMs.Count; i++) sum += frameMs[i];
+      double avg = sum / n;
+      if (avg <= 0) return 0;
+      return (int)Math.Round(1000.0 / avg);
+    }
+
+    int ComputeWindowLow(FpsWindow w) {
+      _lowScratch.Clear();
+      foreach (var s in w.LowSamples) _lowScratch.Add(s.MsBetweenPresents);
+      return ComputeLowFps(_lowScratch, LowPercentile);
     }
 
     static bool TryComputeFps(FpsWindow w, out float fps) {
@@ -430,7 +471,40 @@ namespace OmenSuperHub.Services {
       if (MinParseIntervalPerPid.TotalMilliseconds >= SampleWindowSeconds * 1000 / 3)
         fail.Add("节流间隔过长: " + MinParseIntervalPerPid.TotalMilliseconds + "ms vs 窗口 " + (SampleWindowSeconds * 1000) + "ms");
 
-      return fail.Count == 0 ? "PASS PresentMonFpsMonitor throttle"
+      // ── 1% low ──
+      // 低帧窗口必须长于实时窗口,否则 1% 分位在 ~90 帧上退化成 1 帧,数值全在抖。
+      if (LowWindowSeconds <= SampleWindowSeconds)
+        fail.Add("1% low 窗口必须长于实时窗口: " + LowWindowSeconds + " vs " + SampleWindowSeconds);
+
+      if (ComputeLowFps(new List<double>(), LowPercentile) != 0 || ComputeLowFps(null, LowPercentile) != 0)
+        fail.Add("1% low 空样本应为 0");
+
+      var uniform = new List<double>();
+      for (int i = 0; i < 100; i++) uniform.Add(10);
+      int u = ComputeLowFps(uniform, LowPercentile);
+      if (u != 100) fail.Add("1% low 均匀 10ms 应为 100, got " + u);
+
+      // 100 帧里 1 帧卡顿 → ceil(100*0.01)=1 帧进分位 → 1000/100 = 10
+      var jitter = new List<double>();
+      for (int i = 0; i < 99; i++) jitter.Add(16.7);
+      jitter.Add(100);
+      int j = ComputeLowFps(jitter, LowPercentile);
+      if (j != 10) fail.Add("1% low 99×16.7ms+1×100ms 应为 10, got " + j);
+      if (j > 1000.0 / (jitter.Sum() / jitter.Count))
+        fail.Add("1% low 不应高于平均帧率");
+
+      // 1000 帧里 10 帧慢帧 → 分位应取满 10 帧(验证 ceil 缩放,不是恒取 1 帧)
+      var scaled = new List<double>();
+      for (int i = 0; i < 990; i++) scaled.Add(10);
+      for (int i = 0; i < 10; i++) scaled.Add(50);
+      int sc = ComputeLowFps(scaled, LowPercentile);
+      if (sc != 20) fail.Add("1% low 1000 帧取 10 慢帧应为 20, got " + sc);
+
+      // 非法帧时间不得产生除零/负数
+      if (ComputeLowFps(new List<double> { 0, 0 }, LowPercentile) != 0)
+        fail.Add("1% low 全零帧时间应为 0(不得除零)");
+
+      return fail.Count == 0 ? "PASS PresentMonFpsMonitor throttle + 1% low"
         : "FAIL:\n  " + string.Join("\n  ", fail);
     }
   }

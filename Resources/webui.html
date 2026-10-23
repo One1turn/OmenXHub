@@ -89,12 +89,14 @@ body{
 /* ---- Fluent System Icons 子集字体: 码位与主程序 Wpf.Ui SymbolRegular 同源
      F35C=DeveloperBoard24 F35D=DeviceEq24 F60F=Power24 F191=ArrowSync24
      F4C8=Gauge24 F1BC=Battery024 F4A4=Info24 E9F3=Ram20(运存/显存) F202=Broom24(清理)
-     F2DE=Clock24(频率) F6AA=Settings24(显示设置) F35A=Desktop24(显示器)
+     F2DE=Clock24(频率) E67F=Fps6024(FPS) F6AA=Settings24(显示设置) F35A=Desktop24(显示器)
      E685=FullScreenMaximize24 / E688=FullScreenMinimize24(全屏切换))。
-     重建: fontTools.subset <从 Wpf.Ui.dll 提取的 FluentSystemIcons-Regular.ttf>
-     --unicodes=U+F35C,U+F35D,U+F60F,U+F191,U+F4C8,U+F1BC,U+F4A4,U+E9F3,U+F202,U+F2DE,U+F6AA,U+F35A,U+E685,U+E688
+     重建: fontTools.subset <从 Wpf.Ui.dll 里取 Wpf.Ui.g.resources 流中
+     key=resources/fonts/fluentsystemicons-regular.ttf 的那份(不是 Resources/Fonts/ 下那份,
+     两者不同源;用 DLL 里那份才能逐字节复现当前 blob)>
+     --unicodes=U+F35C,U+F35D,U+F60F,U+F191,U+F4C8,U+F1BC,U+F4A4,U+E9F3,U+F202,U+E67F,U+F2DE,U+F6AA,U+F35A,U+E685,U+E688
      --layout-features='' --flavor=woff ---- */
-@font-face{font-family:'fsi';src:url(data:font/woff;base64,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) format('woff');font-display:block}
+@font-face{font-family:'fsi';src:url(data:font/woff;base64,d09GRgABAAAAAAuIAAsAAAAAEXgAAQAAAAAAAAAAAAAAAAAAAAAAAAAAAABHU1VCAAALXAAAACkAAAAquPq49E9TLzIAAAo0AAAAQwAAAGA2FFOpY21hcAAACngAAABpAAAAnJmDioBnbHlmAAABCAAACHwAAA4My7Nr0mhlYWQAAAnIAAAANgAAADZZW6HpaGhlYQAAChQAAAAeAAAAJAPnAe9obXR4AAAKAAAAABEAAAAkAfQAAGxvY2EAAAmkAAAAIgAAACIa1xdobWF4cAAACYQAAAAfAAAAIAEsAPZuYW1lAAAK5AAAAGcAAACkCN8hi3Bvc3QAAAtMAAAAEAAAACAACAAAeJylV12MG1cVnnPn/syMZ8b2jD1jz3r9M/aOtd7Eu7HHdpq03oi2qw1R1KQJu2mUJqsSIQR9ioqCBEnpA6I8ICUVVPACItC+wEsEioQElUCiDw0SQsoLPykSz7z2ZSVWnHvH3t0AQUhY1p1z7z1z7rnn5ztnNKLhD34Bf9Ka2imkeBDWwQUxGad9yCPVgGAwhVWYkqSb8C4vNcAlQRhMIen2YQoTweuwDuN0FZIYLlDgnXp1o+9Sw2YrFPQj1DYJLR6/1OwcZc5XKC1MtuPmCnMMYO2FaOOoy6nHe4z1qANvM4fWLr3yLHOpY8p3c2yFoaAi23z99ZiSTeqwPHvxi1/oULAcunhp+wRzuccEvsyWmZbd5iF8WatqPaQGwSIM5VDiK1CWQ5w8B+l4GLZjLsqlIBwOxpNRmnThtWipbNi2UV6KdqNOJ9rdtT0o2P9QI9xcikqO0TOcUrS0FN2qLjUK9tecIinYb9lFounq3D/CH7QK2rGDdFDKQ8DzxEXTJeN1MoVwMh6wMLMrCSfwiNK7Nd4snqB5dp8B3/aal9t3qbP3+9uiOjwdNafv9uB3aJA7ncvN4iUOyJWnJ4pNvnCH/eqWiE4PIVrofWc6O/0hPNTs7N6TdAqDOpRciPvgxy6U6oBOxJNFH2K+CHU4ia7rwwqcXju/c35NDfefuXb8+LUbcngGLNsAk21xHPkLu2szlrXzoM1YcNjhwhRvcgGmY2j7WjzQGlpbS1GLOEnHk+GoHSfdEVJLgyBEH4h2eYjKcdFFwm/N/NCa+eFbKJJ3L/kLUPVgQz2udIQJBt+4ePHm3gccSQYvqkfPsC1Iq/7H3gJA5H2M3KmBcXMhhbOCP5Y8/DEzQdPovoVuat/Q7mjfU7ERlusQZrpInZR2bTGnRBvToIw2RO3bah4no+6c6o760G2jeQ/dcDjZv+sQE2OEXkBJQzUfBOVQUTLyMB6DkzAYYygmYhCUuLRUGPNSMBinCUzR6mFMj6kLHFvFmZg/hjQO5a07Bie4rR7/MzPn9G2/VvPlsI1xnGKYO54XeR589H+KfhozM8ir2YFyGHVSeWpDHhl5GlNe+SFGjIzbRBtKBPLrUPal1Ud6OhbSbNI8oy6aN/NLNhHIFmbOScct9KPylNzZRQ1MVM3anBP35sRfZ4QJo/kSPEA9995XWsNlbq0b7LEMQRwOqCny7CiWHW4dpjXNUHe4h3fwtBe0a9rnta9r72o/0n6G8V8nMrDm8SLjA5WeqZlg8HCFPyr88FJZtKglia1ZbHUzGfMgPSQrlKuSUVdmUZaQyZ2HcR1RB6NTRts8lGfToZAMiAZT0ofJPgaqYE0+kdnm+wYjKrt+XKxKC1GEJ4Mz24ugUiwWK9LrjLqY9QIXq6TifSiUrzvKKEkWEAb/dqGgnucqSyCTEryKB+Av10UpWa7B0k8rHRJXRaWFI30HURZyRd/VReGbYEtcFbkCeL+EKEFeFUxfQnGoghJKKANhGVBtL2RLQhCd7y8BSC0b8thMqze42VBTiNoVQy2ZdqFgNy222Ot4ZrO8HXWgXdmudghpyQfcKNi6VRDU8Yu5CwV7yykC5PHhzdHkAfrc17raSe0ljNp0LBM6TVawZC5iFR2MR2WV5IGsOhyrDkJyUF5SxSiQqS/RN8EQGPqqLvEDSIh5+Wo+tyxMUyxXWljozP1ZjFhrQj2XNx0LWhW1+vzBLrLCV5/Y/LOcmRBns0+eFLv3N7U7Y/2Xez2rnZP3ShRcHdJwVJQ5KPWU1VTdOyj7B6CWrct9PbvogWnwYvfxPFOk3DR5Wlp4YnJPmAullFsWT1GdYLYnp6UFeH++7iDT3l/UK7MZpNYhWdbedw9vajOUkdhf1FoKY85ibgYuqPYFux3eTVwIJmNsarjgmBdT6Cbj7hhzLo/ZJ3NpMl6HMCunWWll+xUVq+t7ghVFxx28eszEtqb76W7u7zynu35DFJmoFGzCO7olCGnGup5rVKlJRPrzgzK69+ZBDX5PNjOd668s26To6mZr46U3COfLn2nIJqn6fIvnxjqz6HNTzEjdbzo6X/3UobJ9UKcP17wMXVfRm/tNAd4iTNwMCWRboHB2BqBoCd6Vnt09LPnC2tqFnXOrq+fW5iAqbMexsWWCjw7u0oC1l3deXgOlxTtZ0hpyPA1BGRPb1mY92gP4tRYrncYS2lwERmVR2QMg8IUZUqKmGYodaPcTbjPKl4/1Ni9u9o4tGyRvDE4Mtj63NTz51j6o3yHURvuc7fc2e/jvn/WpZ9HwymS4NRhsDSdXNg32A6Xa94WpCaXRb+AuWmmqbWmXtavaa9oN2SPUiQx+ITFUpsAqqAd2wjJ/MbSnZMjSPmm3YiHzvlQnw9YAA2jUzV7FVeTvE2TFVQnaJ2GUDWFLAQR2hQ3sUccjuGsVXcOxHUuI61xfXNT5Z22f6rZjOJ4FG1SYbO+RZehUUnBEUgNmCiqoyXbnxPr6+vUz16fT7b1Hgl2LqUXja0zAHSnjtlPhR6RIWqtRecxRXnFuy1P35dzaJ+QhZ+anKaJ6Bn/vLnERUxoLPo+wD+BDRMBZV+UP0HMNUF8EmE+YUXmQnwx1NJxQvTCXHxXY4vVxIr8wOBoT0y37gpCZhnbCbw5cwKqETRGy66sYISi3hO8G2EHXCTLgvt6QFRKDGZmTLqYuQfn/3k/thiHjoJOqu0gtvekSnUa2HVGduE3donWnSnTgrN/PuJz6f+MKQ9clpFBZdHzPKuYcJ1e0PN9ZrBQIqdWetuO6zX7/VL/fxEYoqdXgtwwLbCOf5w4hND6KB/pG3fDxnKP4lUMcnnebzIBcDtmarsuQTW//J7Z8A9lYQy+5FRc7sCByjKgWGU4UYJHEtTKl5adslfSrUqVT/YZUKalp/wSSn6OHeJxjYGRgYBBgeMUgxAACTEDMBYQMDP/BfAYAInICIwAAAAAAAGcAowDiASUBcwI+AqADmgQGBHEE7QU5BYIGHgcGAAAAAQAAAAEAAK115ydfDzz1AAsB9AAAAAB8JbCAAAAAAHwlsID/9f/5AfwB/wAAAAgAAgAAAAAAAHicY2BgYGD8woAXAAAd0AD2AAAAeJxjYGRgYPzCwAAi/3/9/4PxDwMjAypgAgCg6QbXAAB4nGNgYfzCOIGBlYGBMZAxjoGBwQ1Kf2CQYGhkYGBiYGVmwAoC0lxTGA48q/+2ivELkKvLpMjADqQZURQxAQBJ8As+AHicY2BgYGJgYGAGYhEgyQimWRg6gLQcgwBQhO9Z/bPWZx0vP3+c+HHPJ6ZP9z5HfY79suTLiW/831b9/8/AgEU+BiEv2SnZItkkJs1XwOfGx8irxrOaZxV3Brcz5z/OVLBteAAA4Js1AQAAAHicXYq9CkBgGEYPPspiNLsBwhWYlMVA2SVJ+Skfg7v3hkGm5zynAziUWBjKxSCFl008eQ9bH68+bOOTvezcPmfioGdhp+ZEy/bMFHSsYjUhlZhBqomW7fcaeZtU410HJETEF+y5EoMAeJxjYGaAAFYGrAAAAPAACXicY2BkYGDgYlBj0GBgcnHzCWHgy0ksyWOQYGABijP8/88ABwBtlwVdAAAA) format('woff');font-display:block}
 .fic{font-family:'fsi';font-style:normal;font-weight:400;line-height:1;display:inline-block}
 .metric .lbl .fic{font-size:14px;opacity:.75}
 .panel-head .fic{font-size:16px;flex:none;color:var(--winui-accent)}
@@ -446,6 +448,14 @@ input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:var(
       <div class="val" id="bat">—</div>
       <div class="meter"><i id="batBar"></i></div>
     </div>
+    <!-- ponytail: FPS 走单独的 /api/fps(PresentMon 需要前台游戏才有值), 不塞进
+         /api/hardware/all —— 免得每个 WebUI 访客都为一张看不见的卡拉起 PresentMon。
+         val=实时 FPS, sub=1% low · 当前应用。 -->
+    <div class="card metric" data-k="fps">
+      <div class="lbl"><span class="fic" aria-hidden="true">&#xE67F;</span>FPS</div>
+      <div class="val" id="fps">—</div>
+      <div class="sub" id="fpsSub">—</div>
+    </div>
   </div>
 
   <div class="panel">
@@ -471,7 +481,19 @@ input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:var(
 
   <div class="panel">
     <div class="panel-head">
-      <span class="fic" aria-hidden="true">&#xF191;</span>
+      <!-- ponytail: 侧栏 NavFan 用的是自绘符号(Controls/FanIcon.cs: 4 片 90° 弯刀叶片 + 轴心圆),
+           字体图标集里没有对应字形 —— F191 是另一个风扇造型,故直接把几何原样移植成 SVG。
+           四个 path 同一段 d,靠 transform 旋转,与 WPF 的 RotateTransform(i*90,12,12) 同坐标同向。
+           .panel-head svg 已有 width/height 16px + color:accent 规则,fill 取 currentColor 即可。 -->
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <g fill="currentColor" fill-rule="nonzero">
+          <path d="M12,10.6 C9.6,10.6 7.8,9 7.8,6.4 C7.8,4.2 9.4,3 11.2,3.6 C11.6,6.4 11.8,8.8 12,10.6 Z"/>
+          <path transform="rotate(90 12 12)" d="M12,10.6 C9.6,10.6 7.8,9 7.8,6.4 C7.8,4.2 9.4,3 11.2,3.6 C11.6,6.4 11.8,8.8 12,10.6 Z"/>
+          <path transform="rotate(180 12 12)" d="M12,10.6 C9.6,10.6 7.8,9 7.8,6.4 C7.8,4.2 9.4,3 11.2,3.6 C11.6,6.4 11.8,8.8 12,10.6 Z"/>
+          <path transform="rotate(270 12 12)" d="M12,10.6 C9.6,10.6 7.8,9 7.8,6.4 C7.8,4.2 9.4,3 11.2,3.6 C11.6,6.4 11.8,8.8 12,10.6 Z"/>
+          <circle cx="12" cy="12" r="1.8"/>
+        </g>
+      </svg>
       风扇配置
     </div>
     <!-- ponytail: 只放主程序「风扇配置」五档下拉(用户指定), 选中即切档与 App 行为一致;
@@ -514,6 +536,17 @@ input[type=range]::-moz-range-track{height:4px;border-radius:2px;background:var(
         <span class="num" id="memCleanState" style="width:auto;flex:1;text-align:left"></span>
       </div>
     </div>
+    <!-- ponytail: 关机/重启走 POST /api/system/shutdown|restart, 服务端都要求 confirm:true,
+         故此按钮先 confirm() 再发(与主程序二次确认同义)。两个端点仅回环放行 —— 从别的设备
+         打开本页点它们会收到 403("Forbidden: endpoint not available over LAN"), 错误条原样显示。 -->
+    <div class="row">
+      <label>电源</label>
+      <div class="grow">
+        <button id="restartBtn">重启</button>
+        <button id="shutdownBtn">关机</button>
+        <span class="num" id="powerState" style="width:auto;flex:1;text-align:left"></span>
+      </div>
+    </div>
   </div>
 
   <p class="foot">数据每 2 秒刷新 · 最后更新 <span id="updated">—</span></p>
@@ -530,8 +563,16 @@ function api(path, opts) {
   opts = opts || {};
   opts.headers = Object.assign({}, HDR, opts.headers || {});
   return fetch(path, opts).then(function (r) {
-    if (!r.ok) throw new Error('HTTP ' + r.status);
-    return r.json();
+    return r.text().then(function (t) {
+      var d = null;
+      try { d = t ? JSON.parse(t) : null; } catch (e) { /* 非 JSON(如 404 空体): d 留 null */ }
+      if (!r.ok) {
+        // ponytail: 带上服务端的 error 文案 —— 光有「HTTP 403」分不清是令牌错还是局域网
+        // 白名单拦截, 两者处置完全不同(改链接 vs 回主机操作)。服务端本就返回 {error:"..."}。
+        throw new Error((d && d.error) ? d.error : ('HTTP ' + r.status));
+      }
+      return d;
+    });
   });
 }
 
@@ -559,6 +600,24 @@ function setMeter(id, pct) {
 function num(v, digits, unit) {
   if (v === null || v === undefined || isNaN(v)) return '<span class="dim">—</span>';
   return v.toFixed(digits) + '<span class="unit">' + unit + '</span>';
+}
+
+// ---- FPS 卡(PresentMon; 实时 FPS + 1% low) ----
+// 卡片被显隐设置藏起来时不请求 —— 没必要为一张看不见的卡在主机上拉起 PresentMon。
+function pollFps() {
+  var card = document.querySelector('.card.metric[data-k="fps"]');
+  if (card && card.hidden) return;
+  api('/api/fps').then(function (d) {
+    var live = d && !isNaN(d.fps) && d.fps > 0;
+    $('fps').innerHTML = live ? num(d.fps, 0, 'FPS') : '<span class="dim">—</span>';
+    if (!d || !d.running) { $('fpsSub').textContent = '未监控'; return; }
+    if (!live) { $('fpsSub').textContent = '等待前台游戏'; return; }
+    $('fpsSub').textContent = '1% low ' + d.fpsLow + (d.app ? ' · ' + d.app : '');
+  }).catch(function () {
+    // 静默: FPS 是可选监控, 令牌/连接问题由主轮询的横幅统一报, 这里别刷屏。
+    $('fps').innerHTML = '<span class="dim">—</span>';
+    $('fpsSub').textContent = '未监控';
+  });
 }
 
 function poll() {
@@ -687,6 +746,27 @@ $('displayOff').addEventListener('click', function () {
     showError('关闭显示器失败：' + e.message);
   }).then(function () { btn.disabled = false; });
 });
+
+// ---- 关机 / 重启(POST /api/system/shutdown|restart, 服务端均要求 confirm:true) ----
+// ponytail: 两个按钮同一段逻辑, 抽一个 wirePower 而不是把 20 行抄两遍。
+function wirePower(btnId, otherId, path, verb) {
+  $(btnId).addEventListener('click', function () {
+    if (!window.confirm('确定' + verb + '吗？5 秒后系统将' + verb + '。')) return;
+    var btn = this, other = $(otherId);
+    btn.disabled = other.disabled = true;
+    $('powerState').textContent = '发送中…';
+    post(path, { confirm: true }).then(function () {
+      clearError();
+      $('powerState').textContent = '已发送 · 5 秒后' + verb;
+    }).catch(function (e) {
+      $('powerState').textContent = '';
+      showError(verb + '失败：' + e.message);
+    }).then(function () { btn.disabled = other.disabled = false; });
+  });
+}
+// 两个键都避免与页面滚动/输入冲突: 回车已由 confirm() 承担, 不加额外快捷键。
+wirePower('shutdownBtn', 'restartBtn', '/api/system/shutdown', '关机');
+wirePower('restartBtn', 'shutdownBtn', '/api/system/restart', '重启');
 
 // ---- 显示设置: 指标卡显隐(localStorage, 每浏览器/设备独立, 不影响服务端) ----
 var VIS_KEY = 'oxh.metrics';
@@ -841,8 +921,8 @@ document.addEventListener('keydown', function (e) {
   });
 });
 
-poll();
-setInterval(poll, 2000);
+poll(); pollFps();
+setInterval(function () { poll(); pollFps(); }, 2000);
 loadFanMode();
 </script>
 </body>
